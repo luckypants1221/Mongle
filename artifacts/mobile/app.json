@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "몽글",
+    "slug": "mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "mobile",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/logo_nobg.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1E203C"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "backgroundColor": "#1E203C"
+    },
+    "android": {
+      "backgroundColor": "#1E203C",
+      "statusBar": {
+        "backgroundColor": "#00000000",
+        "translucent": true,
+        "barStyle": "light-content"
+      }
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
