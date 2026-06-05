@@ -8,16 +8,16 @@ const api= axios.create({
 //로그안
 export const loginApi =( 
     email: string,
-    password: string) => api.post("/login", { email, password });
+    pwd: string) => api.post("/login", { email, pwd });
 //회원가입
-export const registerApi = ({ name, email, password }: { name: string; email: string; password: string }) => api.post("/signup", { name, email, password });
+export const signupApi = (name: string, pwd: string, email: string) => api.post("/signup", { name, email, pwd });
 
 //수면 기록
 export  const sleepinfoApi = (id: string) => api.get(`/sleepinfo?id=${id}`);
 
 //비밀번호 변경
-export const changePasswordApi = (id: string, currentPassword: string, newPassword: string) =>
-  api.post("/changepw", { id, currentPassword, newPassword });
+export const changePasswordApi = (id: string, pwd: string, new_pwd: string) =>
+  api.post("/changepw", { id, pwd, new_pwd });
 
 //회원탈퇴
 export const deleteApi = (id: string,pwd: string) => api.post(`/delete`,{ id, pwd});

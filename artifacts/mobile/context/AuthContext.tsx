@@ -1,5 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { loginApi, signupApi } from "@/services/authApi";
+// import { *asAccordionPrimitive } from '@radix-ui/react-accordion';
 
 interface User {
   id: string;
@@ -10,8 +12,8 @@ interface User {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
-  register: (data: { name: string; email: string; password: string }) => Promise<boolean>;
+  login: (id: string, pwd: string) => Promise<boolean>;
+  register: (data: { name: string; email: string; pwd: string }) => Promise<boolean>;
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => Promise<void>;
 }
@@ -34,39 +36,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
   }
 
-  async function login(email: string, _password: string): Promise<boolean> {
-    try {
-      const stored = await AsyncStorage.getItem("@sleep_users");
-      const users: User[] = stored ? JSON.parse(stored) : [];
-      const found = users.find((u) => u.email === email);
-      if (!found) return false;
-      await AsyncStorage.setItem("@sleep_user", JSON.stringify(found));
-      setUser(found);
-      return true;
-    } catch {
-      return false;
-    }
-  }
+  async function login(
+  email: string,
+  pwd: string
+): Promise<boolean> {
+  try {
+    const res = await loginApi(email, pwd);
 
-  async function register(data: { name: string; email: string; password: string }): Promise<boolean> {
-    try {
-      const stored = await AsyncStorage.getItem("@sleep_users");
-      const users: User[] = stored ? JSON.parse(stored) : [];
-      if (users.find((u) => u.email === data.email)) return false;
-      const newUser: User = {
-        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-        name: data.name,
-        email: data.email,
-      };
-      users.push(newUser);
-      await AsyncStorage.setItem("@sleep_users", JSON.stringify(users));
-      await AsyncStorage.setItem("@sleep_user", JSON.stringify(newUser));
-      setUser(newUser);
-      return true;
-    } catch {
+    if (
+      res.data.message !==
+      "login success"
+    ) {
       return false;
     }
+
+    const user = { id: res.data.id, name: res.data.name, email: res.data.email };
+
+    await AsyncStorage.setItem(
+      "@sleep_user",
+      JSON.stringify(user)
+    );
+
+    setUser(user);
+
+    return true;
+  } catch {
+    return false;
   }
+}
+
+ async function register(data: {
+  name: string;
+  pwd: string;
+  email: string;
+}): Promise<boolean> {
+  try {
+    const res = await signupApi (
+      data.name,
+      data.pwd,
+      data.email
+    );
+
+    return (
+      res.data.message ===
+      "signup success"
+    );
+  } catch {
+    return false;
+  }
+}
 
   async function logout() {
     await AsyncStorage.removeItem("@sleep_user");
