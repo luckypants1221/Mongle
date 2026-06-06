@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSleep } from "@/context/SleepContext";
 import { useColors } from "@/hooks/useColors";
 
+
 function pad2(n: number) { return String(n).padStart(2, "0"); }
 function formatClock(d: Date) { return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
 function formatElapsed(s: number) {
@@ -55,7 +56,7 @@ export default function SleepScreen() {
     setEnding(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await endSleep();
-    router.replace("/(tabs)/records");
+    router.replace("/sleep_rating");
   }
 
   if (!activeSession) {
