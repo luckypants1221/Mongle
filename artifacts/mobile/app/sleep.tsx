@@ -68,7 +68,6 @@ export default function SleepScreen() {
   }
 
   const startTime = formatClock(activeSession.startTime);
-  // 알람 시각 기준으로 기상 예정 계산 (시작 시각 이후 가장 가까운 알람 시각)
   const wakeDate = new Date(activeSession.startTime);
   wakeDate.setHours(alarmHour, alarmMin, 0, 0);
   if (wakeDate.getTime() <= activeSession.startTime.getTime()) {
