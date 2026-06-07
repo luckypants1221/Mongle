@@ -14,9 +14,8 @@ import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { AuthProvider } from "@/context/AuthContext";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { SleepProvider } from "@/context/SleepContext";
 
 SplashScreen.preventAutoHideAsync();

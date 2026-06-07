@@ -61,7 +61,7 @@ export default function RegisterScreen() {
     }
     setLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const ok = await register({ name, email, password });
+    const ok = await register({ name, email, pwd: password });
     setLoading(false);
     if (!ok) {
       Alert.alert("가입 실패", "이미 사용 중인 이메일입니다.");

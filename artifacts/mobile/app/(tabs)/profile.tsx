@@ -20,6 +20,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useSleep } from "@/context/SleepContext";
 import { useColors } from "@/hooks/useColors";
 import { useTabBarHeight } from "@/hooks/useTabBarHeight";
+import { TextInput } from "react-native-gesture-handler";
 
 /* ─── 시간 피커 ──────────────────────────────────────── */
 function TimeSpinner({
@@ -91,17 +92,17 @@ export default function ProfileScreen() {
   const { averageDuration, averageScore, records, alarmHour, alarmMin, alarmOn, setAlarm, setAlarmOn } = useSleep();
 
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [draftHour, setDraftHour]   = useState(7);
-  const [draftMin, setDraftMin]     = useState(0);
-  const [sleepGoal, setSleepGoal]   = useState(480);
+  const [draftHour, setDraftHour] = useState(7);
+  const [draftMin, setDraftMin] = useState(0);
+  const [sleepGoal, setSleepGoal] = useState(480);
 
-  const topPad     = Platform.OS === "web" ? 67 : insets.top;
-  const period     = alarmHour < 12 ? "오전" : "오후";
-  const hour12     = alarmHour === 0 ? 12 : alarmHour > 12 ? alarmHour - 12 : alarmHour;
-  const alarmStr   = `${period} ${String(hour12).padStart(2, "0")}:${String(alarmMin).padStart(2, "0")}`;
+  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const period = alarmHour < 12 ? "오전" : "오후";
+  const hour12 = alarmHour === 0 ? 12 : alarmHour > 12 ? alarmHour - 12 : alarmHour;
+  const alarmStr = `${period} ${String(hour12).padStart(2, "0")}:${String(alarmMin).padStart(2, "0")}`;
   const draftPeriod = draftHour < 12 ? "오전" : "오후";
-  const draftH12   = draftHour === 0 ? 12 : draftHour > 12 ? draftHour - 12 : draftHour;
-  const goalStr    = `${Math.floor(sleepGoal / 60)}시간`;
+  const draftH12 = draftHour === 0 ? 12 : draftHour > 12 ? draftHour - 12 : draftHour;
+  const goalStr = `${Math.floor(sleepGoal / 60)}시간`;
 
   function openPicker() {
     setDraftHour(alarmHour); setDraftMin(alarmMin);
@@ -118,20 +119,71 @@ export default function ProfileScreen() {
   async function handleLogout() {
     Alert.alert("로그아웃", "정말 로그아웃 하시겠습니까?", [
       { text: "취소", style: "cancel" },
-      { text: "로그아웃", style: "destructive",
-        onPress: async () => { await logout(); router.replace("/(auth)/login"); } },
+      {
+        text: "로그아웃", style: "destructive",
+        onPress: async () => { await logout(); router.replace("/(auth)/login"); }
+      },
     ]);
   }
 
   function pickGoal() {
     Alert.alert("수면 목표", "목표 수면 시간을 선택하세요", [
-      { text: "6시간",       onPress: () => setSleepGoal(360) },
-      { text: "7시간",       onPress: () => setSleepGoal(420) },
+      { text: "6시간", onPress: () => setSleepGoal(360) },
+      { text: "7시간", onPress: () => setSleepGoal(420) },
       { text: "8시간 (권장)", onPress: () => setSleepGoal(480) },
-      { text: "9시간",       onPress: () => setSleepGoal(540) },
+      { text: "9시간", onPress: () => setSleepGoal(540) },
       { text: "취소", style: "cancel" },
     ]);
   }
+
+
+  //비밀번호 변경
+  const [userUpdatePicker, setUserUpdatePicker] = useState(false);
+
+  const [newEmail, setNewEmail] = useState(user?.email ?? "");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+
+  const {
+    user: currentUser,
+    changePassword
+  } = useAuth();
+
+  async function handleProfileUpdate() {
+    console.log("저장 버튼 클릭");
+    console.log(currentUser);
+    if (!currentUser) return;
+
+    if (newPassword !== confirmPassword) {
+      Alert.alert(
+        "오류",
+        "비밀번호가 일치하지 않습니다."
+      );
+      return;
+    }
+
+    const success = await changePassword(
+      currentUser.id,
+      currentPassword,
+      newPassword
+    );
+
+    if (success) {
+      Alert.alert(
+        "완료",
+        "비밀번호가 변경되었습니다."
+      );
+      setUserUpdatePicker(false);
+    } else {
+      Alert.alert(
+        "오류",
+        "현재 비밀번호가 올바르지 않습니다."
+      );
+    }
+  }
+
+
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -148,13 +200,163 @@ export default function ProfileScreen() {
               <Text style={styles.profileName}>{user?.name ?? "사용자"}</Text>
               <Text style={styles.profileEmail}>{user?.email ?? ""}</Text>
             </View>
-            <Pressable style={styles.editBtn} onPress={() => Alert.alert("알림", "준비 중입니다.")}>
+            <Pressable style={styles.editBtn} onPress={() => setUserUpdatePicker(true)}>
               <Feather name="edit-2" size={14} color="#FFE082" />
             </Pressable>
+            <Modal
+              visible={userUpdatePicker}
+              transparent
+              animationType="slide"
+              onRequestClose={() => setUserUpdatePicker(false)}
+            >
+              <View style={styles.userBackdrop}>
+                <View
+                  style={[
+                    styles.userSheet,
+                    { backgroundColor: colors.card }
+                  ]}
+                >
+                  <Pressable
+                    style={styles.userCloseBtn}
+                    onPress={() => setUserUpdatePicker(false)}
+                  >
+                    <Feather
+                      name="x"
+                      size={22}
+                      color={colors.mutedForeground}
+                    />
+                  </Pressable>
+
+                  <Text
+                    style={[
+                      styles.userTitle,
+                      { color: colors.text }
+                    ]}
+                  >
+                    회원정보 수정
+                  </Text>
+
+                  {/* 이메일 */}
+                  <Text
+                    style={[
+                      styles.userLabel,
+                      { color: colors.mutedForeground }
+                    ]}
+                  >
+                    현재 비밀번호
+                  </Text>
+
+                  <View
+                    style={[
+                      styles.inputIconWrap,
+                      { backgroundColor: colors.surface }
+                    ]}
+                  >
+                    <Feather
+                      name="mail"
+                      size={18}
+                      color="#BBDDFF"
+                    />
+
+                    <TextInput
+                      value={newEmail}
+                      onChangeText={setNewEmail}
+                      placeholder="현재 비밀번호 입력"
+                      placeholderTextColor={colors.mutedForeground}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      style={{
+                        flex: 1,
+                        color: colors.text,
+                      }}
+                    />
+                  </View>
+
+                  {/* 비밀번호 */}
+                  <Text
+                    style={[
+                      styles.userLabel,
+                      { color: colors.mutedForeground }
+                    ]}
+                  >
+                    새 비밀번호
+                  </Text>
+
+                  <View
+                    style={[
+                      styles.inputIconWrap,
+                      { backgroundColor: colors.surface }
+                    ]}
+                  >
+                    <Feather
+                      name="lock"
+                      size={18}
+                      color="#FFE082"
+                    />
+
+                    <TextInput
+                      value={newPassword}
+                      onChangeText={setNewPassword}
+                      placeholder="새 비밀번호"
+                      placeholderTextColor={colors.mutedForeground}
+                      secureTextEntry
+                      style={{
+                        flex: 1,
+                        color: colors.text,
+                      }}
+                    />
+                  </View>
+
+                  <View
+                    style={[
+                      styles.inputIconWrap,
+                      { backgroundColor: colors.surface }
+                    ]}
+                  >
+                    <Feather
+                      name="shield"
+                      size={18}
+                      color="#80CBC4"
+                    />
+
+                    <TextInput
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      placeholder="비밀번호 확인"
+                      placeholderTextColor={colors.mutedForeground}
+                      secureTextEntry
+                      style={{
+                        flex: 1,
+                        color: colors.text,
+                      }}
+                    />
+                  </View>
+
+                  <Pressable
+                    style={styles.userSaveBtn}
+                    onPress={handleProfileUpdate}
+                  >
+                    <LinearGradient
+                      colors={["#FFE082", "#FFD040"]}
+                      style={styles.userSaveGrad}
+                    >
+                      <Feather
+                        name="bell"
+                        size={18}
+                        color="#1E203C"
+                      />
+                      <Text style={styles.userSaveText}>
+                        저장하기
+                      </Text>
+                    </LinearGradient>
+                  </Pressable>
+                </View>
+              </View>
+            </Modal>
           </View>
           <View style={styles.miniStatsRow}>
             {[
-              { label: "총 기록",   value: `${records.length}회`, icon: "calendar" as const, color: "#BBDDFF" },
+              { label: "총 기록", value: `${records.length}회`, icon: "calendar" as const, color: "#BBDDFF" },
               { label: "평균 수면", value: `${Math.floor(averageDuration / 60)}h`, icon: "clock" as const, color: "#80CBC4" },
               { label: "평균 점수", value: `${averageScore}점`, icon: "star" as const, color: "#FFE082" },
             ].map(({ label, value, icon, color }) => (
@@ -367,4 +569,72 @@ const styles = StyleSheet.create({
   confirmBtn: { borderRadius: 16, overflow: "hidden" },
   confirmGrad: { paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 },
   confirmText: { color: "#1E203C", fontSize: 16, fontWeight: "800" },
+  userSheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 32,
+    gap: 12,
+  },
+
+  userTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+
+  userLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  userInput: {
+    height: 54,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    fontSize: 15,
+  },
+
+  userSaveBtn: {
+    borderRadius: 16,
+    overflow: "hidden",
+    marginTop: 12,
+  },
+
+  userSaveGrad: {
+    paddingVertical: 16,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  userSaveText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1E203C",
+  },
+
+  userCloseBtn: {
+    position: "absolute",
+    right: 20,
+    top: 20,
+  },
+
+  userBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    justifyContent: "flex-end",
+  },
+
+  inputIconWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    height: 54,
+  },
 });

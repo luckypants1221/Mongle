@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { loginApi, signupApi } from "@/services/authApi";
+import { loginApi, signupApi, changePasswordApi } from "@/services/authApi";
 // import { *asAccordionPrimitive } from '@radix-ui/react-accordion';
 
 interface User {
@@ -16,6 +16,11 @@ interface AuthContextType {
   register: (data: { name: string; email: string; pwd: string }) => Promise<boolean>;
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => Promise<void>;
+  changePassword: (
+    id: string,
+    pwd: string,
+    new_pwd: string
+  ) => Promise<boolean>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -77,11 +82,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         data.email
       );
 
+      console.log("회원가입 응답: ", res.data);
+
       return (
         res.data.message ===
         "signup success"
       );
-    } catch {
+    } catch (error: any) {
+      console.log("전체 에러");
+      console.log(error);
+
+      console.log("응답 데이터");
+      console.log(error.response?.data);
+
+      console.log("응답 상태");
+      console.log(error.response?.status);
       return false;
     }
   }
@@ -105,8 +120,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(updated);
   }
 
+  async function changePassword(
+    id: string,
+    pwd: string,
+    new_pwd: string
+  ): Promise<boolean> {
+    try {
+      if (!user) return false;
+
+      const res = await changePasswordApi(
+        id,
+        pwd,
+        new_pwd
+      );
+
+      return (
+        res.data.message ===
+        "password changed"
+      );
+    } catch {
+      return false;
+    }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, isLoading, login, register, logout, updateUser, changePassword }}>
       {children}
     </AuthContext.Provider>
   );
