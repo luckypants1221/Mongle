@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { api, type User } from "@/lib/api";
+import { api, type RegisterInput, type User } from "@/lib/api";
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
-  register: (data: { name: string; email: string; password: string }) => Promise<boolean>;
+  login: (email: string, pwd: string) => Promise<boolean>;
+  register: (data: RegisterInput) => Promise<boolean>;
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => Promise<void>;
 }
@@ -24,9 +24,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
   }
 
-  async function login(email: string, password: string): Promise<boolean> {
+  async function login(email: string, pwd: string): Promise<boolean> {
     try {
-      const found = await api.login(email, password);
+      const found = await api.login(email, pwd);
       setUser(found);
       return true;
     } catch {
@@ -34,7 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function register(data: { name: string; email: string; password: string }): Promise<boolean> {
+  async function register(data: RegisterInput): Promise<boolean> {
     try {
       const newUser = await api.register(data);
       setUser(newUser);

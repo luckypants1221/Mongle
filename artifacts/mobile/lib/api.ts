@@ -25,6 +25,12 @@ export interface AlarmSettings {
   on: boolean;
 }
 
+export type RegisterInput = {
+  name: string;
+  email: string;
+  pwd: string;
+};
+
 interface AuthResponse {
   user?: User;
   token?: string;
@@ -79,18 +85,22 @@ function normalizeAuthResponse(data: AuthResponse): User {
 }
 
 export const api = {
-  async login(email: string, password: string) {
+  async login(email: string, pwd: string) {
     const data = await request<AuthResponse>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, pwd }),
     });
     return normalizeAuthResponse(data);
   },
 
-  async register(data: { name: string; email: string; password: string }) {
+  async register(data: RegisterInput) {
     const response = await request<AuthResponse>("/auth/register", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        name: data.name,
+        email: data.email,
+        pwd: data.pwd,
+      }),
     });
     return normalizeAuthResponse(response);
   },

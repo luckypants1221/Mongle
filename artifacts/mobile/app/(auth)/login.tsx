@@ -25,18 +25,18 @@ export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const { login } = useAuth();
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [pwd, setPwd] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleLogin() {
-    if (!email || !password) {
+    if (!email || !pwd) {
       Alert.alert("알림", "이메일과 비밀번호를 입력해주세요.");
       return;
     }
     setLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const ok = await login(email, password);
+    const ok = await login(email, pwd);
     setLoading(false);
     if (!ok) {
       Alert.alert("로그인 실패", "이메일 또는 비밀번호가 올바르지 않습니다.");
@@ -100,8 +100,8 @@ export default function LoginScreen() {
                 style={[styles.input, { color: colors.text }]}
                 placeholder="비밀번호"
                 placeholderTextColor={colors.mutedForeground}
-                value={password}
-                onChangeText={setPassword}
+                value={pwd}
+                onChangeText={setPwd}
                 secureTextEntry={!showPass}
                 returnKeyType="done"
                 onSubmitEditing={handleLogin}

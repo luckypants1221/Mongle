@@ -26,7 +26,7 @@ Request:
 ```json
 {
   "email": "user@example.com",
-  "password": "password"
+  "pwd": "password"
 }
 ```
 
@@ -63,7 +63,7 @@ Request:
 {
   "name": "User",
   "email": "user@example.com",
-  "password": "password"
+  "pwd": "password"
 }
 ```
 
