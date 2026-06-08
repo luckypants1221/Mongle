@@ -67,14 +67,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
  async function register(data: {
   name: string;
-  pwd: string;
   email: string;
+  pwd: string;
 }): Promise<boolean> {
   try {
     const res = await signupApi (
       data.name,
-      data.pwd,
-      data.email
+      data.email,
+      data.pwd
     );
 
     return (
