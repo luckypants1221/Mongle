@@ -31,6 +31,12 @@ export type RegisterInput = {
   pwd: string;
 };
 
+export type ChangePasswordInput = {
+  email: string;
+  pwd: string;
+  new_pwd: string;
+};
+
 interface AuthResponse {
   user?: User;
   token?: string;
@@ -191,6 +197,17 @@ export const api = {
       }),
     });
     return normalizeAuthResponse(response);
+  },
+
+  async changePassword(data: ChangePasswordInput) {
+    await request<unknown>("/changepw", {
+      method: "POST",
+      body: JSON.stringify({
+        email: data.email,
+        pwd: data.pwd,
+        new_pwd: data.new_pwd,
+      }),
+    });
   },
 
   logout() {
