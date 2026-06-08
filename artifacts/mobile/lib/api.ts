@@ -35,13 +35,16 @@ interface AuthResponse {
   user?: User;
   token?: string;
   id?: string;
+  user_id?: string;
+  userId?: string;
   name?: string;
   email?: string;
+  message?: string;
 }
 
 const localhostApiUrl = Platform.select({
-  android: "http://10.0.2.2:3000/api",
-  default: "http://localhost:3000/api",
+  android: "http://13.125.10.228",
+  default: "http://13.125.10.228",
 });
 
 const API_BASE_URL =
@@ -70,23 +73,54 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function normalizeAuthResponse(data: AuthResponse): User {
-  if (data.token) authToken = data.token;
-  const user = data.user ?? data;
+  if (data.message?.toLowerCase().includes("fail")) {
+    throw new Error(data.message);
+  }
 
-  if (!user.id || !user.name || !user.email) {
+  if (data.token) authToken = data.token;
+  const user = (data.user ?? data) as AuthResponse;
+  const id = user.id ?? user.user_id ?? user.userId;
+
+  if (!id || !user.name || !user.email) {
     throw new Error("Auth response must include user id, name and email");
   }
 
   return {
-    id: user.id,
+    id,
     name: user.name,
     email: user.email,
   };
 }
 
+function normalizeSleepRecords(data: unknown): SleepRecord[] {
+  if (!Array.isArray(data)) return [];
+
+  return data.map((item) => {
+    const record = item as Partial<SleepRecord> & {
+      sleep_id?: string | number;
+      sleep_date?: string;
+      start_time?: string;
+      end_time?: string;
+      duration_minutes?: number;
+    };
+
+    return {
+      id: String(record.id ?? record.sleep_id ?? `${record.date ?? record.sleep_date}`),
+      date: String(record.date ?? record.sleep_date ?? ""),
+      startTime: String(record.startTime ?? record.start_time ?? ""),
+      endTime: String(record.endTime ?? record.end_time ?? ""),
+      durationMinutes: Number(record.durationMinutes ?? record.duration_minutes ?? 0),
+      score: Number(record.score ?? 0),
+      temperature: record.temperature,
+      humidity: record.humidity,
+      memo: record.memo,
+    };
+  });
+}
+
 export const api = {
   async login(email: string, pwd: string) {
-    const data = await request<AuthResponse>("/auth/login", {
+    const data = await request<AuthResponse>("/login", {
       method: "POST",
       body: JSON.stringify({ email, pwd }),
     });
@@ -94,7 +128,7 @@ export const api = {
   },
 
   async register(data: RegisterInput) {
-    const response = await request<AuthResponse>("/auth/register", {
+    const response = await request<AuthResponse>("/signup", {
       method: "POST",
       body: JSON.stringify({
         name: data.name,
@@ -110,38 +144,36 @@ export const api = {
   },
 
   updateUser(userId: string, data: Partial<User>) {
-    return request<User>(`/users/${userId}`, {
+    return request<User>(`/profile?user_id=${encodeURIComponent(userId)}`, {
       method: "PUT",
       body: JSON.stringify(data),
     });
   },
 
-  getSleepRecords(userId: string) {
-    return request<SleepRecord[]>(`/users/${userId}/sleep-records`);
+  async getSleepRecords(userId: string) {
+    const data = await request<unknown>(`/sleepinfo?id=${encodeURIComponent(userId)}`);
+    return normalizeSleepRecords(data);
   },
 
   createSleepRecord(userId: string, record: Omit<SleepRecord, "id">) {
-    return request<SleepRecord>(`/users/${userId}/sleep-records`, {
+    return request<SleepRecord>(`/sleepinfo?id=${encodeURIComponent(userId)}`, {
       method: "POST",
       body: JSON.stringify(record),
     });
   },
 
   updateSleepRecord(userId: string, recordId: string, data: Partial<SleepRecord>) {
-    return request<SleepRecord>(`/users/${userId}/sleep-records/${recordId}`, {
+    return request<SleepRecord>(`/sleepinfo?id=${encodeURIComponent(userId)}&record_id=${encodeURIComponent(recordId)}`, {
       method: "PUT",
       body: JSON.stringify(data),
     });
   },
 
-  getAlarm(userId: string) {
-    return request<AlarmSettings>(`/users/${userId}/alarm`);
+  async getAlarm(_userId: string) {
+    return { hour: 7, min: 0, on: true };
   },
 
-  updateAlarm(userId: string, data: AlarmSettings) {
-    return request<AlarmSettings>(`/users/${userId}/alarm`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    });
+  async updateAlarm(_userId: string, data: AlarmSettings) {
+    return data;
   },
 };
