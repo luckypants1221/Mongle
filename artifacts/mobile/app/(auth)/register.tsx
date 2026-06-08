@@ -33,7 +33,7 @@ interface Field {
 const FIELDS: Field[] = [
   { key: "name", label: "이름", placeholder: "이름을 입력하세요", icon: "user" },
   { key: "email", label: "이메일", placeholder: "이메일을 입력하세요", icon: "mail", keyboard: "email-address" },
-  { key: "password", label: "비밀번호", placeholder: "비밀번호를 입력하세요", icon: "lock", secure: true },
+  { key: "pwd", label: "비밀번호", placeholder: "비밀번호를 입력하세요", icon: "lock", secure: true },
   { key: "confirm", label: "비밀번호 확인", placeholder: "비밀번호를 다시 입력하세요", icon: "check-circle", secure: true },
 ];
 
@@ -41,7 +41,7 @@ export default function RegisterScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { register } = useAuth();
-  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
+  const [form, setForm] = useState({ name: "", email: "", pwd: "", confirm: "" });
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -50,18 +50,18 @@ export default function RegisterScreen() {
   }
 
   async function handleRegister() {
-    const { name, email, password, confirm } = form;
-    if (!name || !email || !password) {
+    const { name, email, pwd, confirm } = form;
+    if (!name || !email || !pwd) {
       Alert.alert("알림", "모든 항목을 입력해주세요.");
       return;
     }
-    if (password !== confirm) {
+    if (pwd !== confirm) {
       Alert.alert("알림", "비밀번호가 일치하지 않습니다.");
       return;
     }
     setLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const ok = await register({ name, email, pwd: password });
+    const ok = await register({ name, email, pwd });
     setLoading(false);
     if (!ok) {
       Alert.alert("가입 실패", "이미 사용 중인 이메일입니다.");
@@ -125,7 +125,7 @@ export default function RegisterScreen() {
                     secureTextEntry={secure && !showPass}
                     autoCapitalize="none"
                   />
-                  {key === "password" && (
+                  {key === "pwd" && (
                     <Pressable onPress={() => setShowPass(!showPass)} hitSlop={10}>
                       <Feather
                         name={showPass ? "eye-off" : "eye"}

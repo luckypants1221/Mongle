@@ -1,19 +1,19 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { loginApi, signupApi, changePasswordApi } from "@/services/authApi";
 // import { *asAccordionPrimitive } from '@radix-ui/react-accordion';
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-}
+// interface User {
+//   id: string;
+//   name: string;
+//   email: string;
+// }
+import { api, type RegisterInput, type User } from "@/lib/api";
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (id: string, pwd: string) => Promise<boolean>;
-  register: (data: { name: string; email: string; pwd: string }) => Promise<boolean>;
+  login: (email: string, pwd: string) => Promise<boolean>;
+  register: (data: RegisterInput) => Promise<boolean>;
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => Promise<void>;
   changePassword: (
@@ -34,89 +34,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   async function loadUser() {
-    try {
-      const stored = await AsyncStorage.getItem("@sleep_user");
-      if (stored) setUser(JSON.parse(stored));
-    } catch { }
     setIsLoading(false);
   }
 
-  async function login(
-    email: string,
-    pwd: string
-  ): Promise<boolean> {
+  async function login(email: string, pwd: string): Promise<boolean> {
     try {
-      const res = await loginApi(email, pwd);
-
-      if (
-        res.data.message !==
-        "login success"
-      ) {
-        return false;
-      }
-
-      const user = { id: res.data.id, name: res.data.name, email: res.data.email };
-
-      await AsyncStorage.setItem(
-        "@sleep_user",
-        JSON.stringify(user)
-      );
-
-      setUser(user);
-
+      const found = await api.login(email, pwd);
+      setUser(found);
       return true;
     } catch {
       return false;
     }
   }
 
-  async function register(data: {
-    name: string;
-    email: string;
-    pwd: string;
-  }): Promise<boolean> {
+  async function register(data: RegisterInput): Promise<boolean> {
     try {
-      const res = await signupApi(
-        data.name,
-        data.email,
-        data.pwd
-      );
-
-      console.log("회원가입 응답: ", res.data);
-
-      return (
-        res.data.message ===
-        "signup success"
-      );
-    } catch (error: any) {
-      console.log("전체 에러");
-      console.log(error);
-
-      console.log("응답 데이터");
-      console.log(error.response?.data);
-
-      console.log("응답 상태");
-      console.log(error.response?.status);
+      const newUser = await api.register(data);
+      setUser(newUser);
+      return true;
+    } catch {
       return false;
     }
   }
 
   async function logout() {
-    await AsyncStorage.removeItem("@sleep_user");
+    api.logout();
     setUser(null);
   }
 
   async function updateUser(data: Partial<User>) {
     if (!user) return;
-    const updated = { ...user, ...data };
-    await AsyncStorage.setItem("@sleep_user", JSON.stringify(updated));
-    const stored = await AsyncStorage.getItem("@sleep_users");
-    const users: User[] = stored ? JSON.parse(stored) : [];
-    const idx = users.findIndex((u) => u.id === user.id);
-    if (idx >= 0) {
-      users[idx] = updated;
-      await AsyncStorage.setItem("@sleep_users", JSON.stringify(users));
-    }
+    const updated = await api.updateUser(user.id, data);
     setUser(updated);
   }
 

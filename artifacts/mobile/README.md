@@ -1,7 +1,7 @@
 # 몽글 - 수면 측정 앱
 
 Expo React Native로 만든 수면 측정 앱입니다.  
-백엔드 없이 기기 내 로컬 저장소(AsyncStorage)만 사용합니다.
+프론트 앱은 REST API 서버에서 사용자, 수면 기록, 알람 설정 데이터를 가져옵니다.
 
 ## 실행 방법
 
@@ -34,6 +34,15 @@ npx expo start --web
 
 - Expo SDK 54 + Expo Router
 - React Native + react-native-web
-- AsyncStorage (로컬 저장)
+- REST API (`GET`, `POST`, `PUT`)
+
+## Run with an API server
+
+```sh
+set EXPO_PUBLIC_API_BASE_URL=http://localhost:3000/api
+corepack pnpm --filter mongle-sleep-app web
+```
+
+The mobile app uses `http://localhost:3000/api` by default on web. Override it with `EXPO_PUBLIC_API_BASE_URL` when pointing at the team's existing server. See `API_CONTRACT.md` for the endpoints the frontend calls.
 - react-native-svg (아이콘)
 - expo-linear-gradient, expo-haptics
