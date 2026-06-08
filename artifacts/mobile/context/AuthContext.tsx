@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { loginApi, signupApi, changePasswordApi } from "@/services/authApi";
+import { changePasswordApi } from "@/services/authApi";
 // import { *asAccordionPrimitive } from '@radix-ui/react-accordion';
 
 // interface User {
