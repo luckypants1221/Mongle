@@ -1,11 +1,5 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useState } from "react";
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-}
+import { api, type User } from "@/lib/api";
 
 interface AuthContextType {
   user: User | null;
@@ -27,20 +21,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   async function loadUser() {
-    try {
-      const stored = await AsyncStorage.getItem("@sleep_user");
-      if (stored) setUser(JSON.parse(stored));
-    } catch {}
     setIsLoading(false);
   }
 
-  async function login(email: string, _password: string): Promise<boolean> {
+  async function login(email: string, password: string): Promise<boolean> {
     try {
-      const stored = await AsyncStorage.getItem("@sleep_users");
-      const users: User[] = stored ? JSON.parse(stored) : [];
-      const found = users.find((u) => u.email === email);
-      if (!found) return false;
-      await AsyncStorage.setItem("@sleep_user", JSON.stringify(found));
+      const found = await api.login(email, password);
       setUser(found);
       return true;
     } catch {
@@ -50,17 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function register(data: { name: string; email: string; password: string }): Promise<boolean> {
     try {
-      const stored = await AsyncStorage.getItem("@sleep_users");
-      const users: User[] = stored ? JSON.parse(stored) : [];
-      if (users.find((u) => u.email === data.email)) return false;
-      const newUser: User = {
-        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-        name: data.name,
-        email: data.email,
-      };
-      users.push(newUser);
-      await AsyncStorage.setItem("@sleep_users", JSON.stringify(users));
-      await AsyncStorage.setItem("@sleep_user", JSON.stringify(newUser));
+      const newUser = await api.register(data);
       setUser(newUser);
       return true;
     } catch {
@@ -69,21 +45,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function logout() {
-    await AsyncStorage.removeItem("@sleep_user");
+    api.logout();
     setUser(null);
   }
 
   async function updateUser(data: Partial<User>) {
     if (!user) return;
-    const updated = { ...user, ...data };
-    await AsyncStorage.setItem("@sleep_user", JSON.stringify(updated));
-    const stored = await AsyncStorage.getItem("@sleep_users");
-    const users: User[] = stored ? JSON.parse(stored) : [];
-    const idx = users.findIndex((u) => u.id === user.id);
-    if (idx >= 0) {
-      users[idx] = updated;
-      await AsyncStorage.setItem("@sleep_users", JSON.stringify(users));
-    }
+    const updated = await api.updateUser(user.id, data);
     setUser(updated);
   }
 

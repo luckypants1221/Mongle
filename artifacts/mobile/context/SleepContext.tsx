@@ -1,17 +1,8 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { api, type SleepRecord } from "@/lib/api";
 
-export interface SleepRecord {
-  id: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  durationMinutes: number;
-  score: number;
-  temperature?: number;
-  humidity?: number;
-  memo?: string;
-}
+export type { SleepRecord } from "@/lib/api";
 
 interface SleepContextType {
   records: SleepRecord[];
@@ -32,72 +23,55 @@ interface SleepContextType {
 
 const SleepContext = createContext<SleepContextType | null>(null);
 
-function genSampleRecords(): SleepRecord[] {
-  const now = new Date();
-  const records: SleepRecord[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    if (i === 0) continue;
-    const dateStr = d.toISOString().split("T")[0];
-    const dur = 360 + Math.floor(Math.random() * 120);
-    records.push({
-      id: `sample_${i}`,
-      date: dateStr,
-      startTime: "23:00",
-      endTime: `0${Math.floor(dur / 60)}:${String(dur % 60).padStart(2, "0")}`,
-      durationMinutes: dur,
-      score: 60 + Math.floor(Math.random() * 40),
-      temperature: 22 + Math.floor(Math.random() * 5),
-      humidity: 45 + Math.floor(Math.random() * 20),
-    });
-  }
-  return records;
-}
-
 export function SleepProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
   const [records, setRecords] = useState<SleepRecord[]>([]);
   const [activeSession, setActiveSession] = useState<SleepContextType["activeSession"]>(null);
   const [alarmHour, setAlarmHour] = useState(7);
   const [alarmMin, setAlarmMin] = useState(0);
   const [alarmOn, setAlarmOnState] = useState(true);
 
-  useEffect(() => { loadRecords(); loadAlarm(); }, []);
+  useEffect(() => {
+    if (!user) {
+      setRecords([]);
+      setActiveSession(null);
+      setAlarmHour(7);
+      setAlarmMin(0);
+      setAlarmOnState(true);
+      return;
+    }
 
-  async function loadRecords() {
+    loadRecords(user.id);
+    loadAlarm(user.id);
+  }, [user?.id]);
+
+  async function loadRecords(userId: string) {
     try {
-      const stored = await AsyncStorage.getItem("@sleep_records");
-      if (stored) {
-        setRecords(JSON.parse(stored));
-      } else {
-        const sample = genSampleRecords();
-        setRecords(sample);
-        await AsyncStorage.setItem("@sleep_records", JSON.stringify(sample));
-      }
+      const nextRecords = await api.getSleepRecords(userId);
+      setRecords(nextRecords);
     } catch {}
   }
 
-  async function loadAlarm() {
+  async function loadAlarm(userId: string) {
     try {
-      const stored = await AsyncStorage.getItem("@alarm_settings");
-      if (stored) {
-        const a = JSON.parse(stored);
-        if (typeof a.hour === "number") setAlarmHour(a.hour);
-        if (typeof a.min === "number") setAlarmMin(a.min);
-        if (typeof a.on === "boolean") setAlarmOnState(a.on);
-      }
+      const alarm = await api.getAlarm(userId);
+      setAlarmHour(alarm.hour);
+      setAlarmMin(alarm.min);
+      setAlarmOnState(alarm.on);
     } catch {}
   }
 
   async function setAlarm(hour: number, min: number) {
+    if (!user) return;
     setAlarmHour(hour);
     setAlarmMin(min);
-    await AsyncStorage.setItem("@alarm_settings", JSON.stringify({ hour, min, on: alarmOn }));
+    await api.updateAlarm(user.id, { hour, min, on: alarmOn });
   }
 
   async function setAlarmOn(on: boolean) {
+    if (!user) return;
     setAlarmOnState(on);
-    await AsyncStorage.setItem("@alarm_settings", JSON.stringify({ hour: alarmHour, min: alarmMin, on }));
+    await api.updateAlarm(user.id, { hour: alarmHour, min: alarmMin, on });
   }
 
   function startSleep() {
@@ -109,13 +83,12 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function endSleep(): Promise<SleepRecord | null> {
-    if (!activeSession) return null;
+    if (!activeSession || !user) return null;
     const endTime = new Date();
     const durationMinutes = Math.round((endTime.getTime() - activeSession.startTime.getTime()) / 60000);
     const dateStr = activeSession.startTime.toISOString().split("T")[0];
     const score = Math.min(100, Math.max(40, 70 + Math.floor(durationMinutes / 10)));
-    const record: SleepRecord = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+    const record = await api.createSleepRecord(user.id, {
       date: dateStr,
       startTime: activeSession.startTime.toTimeString().slice(0, 5),
       endTime: endTime.toTimeString().slice(0, 5),
@@ -123,18 +96,18 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
       score,
       temperature: activeSession.temperature,
       humidity: activeSession.humidity,
-    };
+    });
     const updated = [...records.filter((r) => r.date !== dateStr), record];
     setRecords(updated);
     setActiveSession(null);
-    await AsyncStorage.setItem("@sleep_records", JSON.stringify(updated));
     return record;
   }
 
   async function updateMemo(id: string, memo: string) {
-    const updated = records.map((r) => r.id === id ? { ...r, memo } : r);
+    if (!user) return;
+    const updatedRecord = await api.updateSleepRecord(user.id, id, { memo });
+    const updated = records.map((r) => r.id === id ? updatedRecord : r);
     setRecords(updated);
-    await AsyncStorage.setItem("@sleep_records", JSON.stringify(updated));
   }
 
   const getRecordByDate = useCallback(
