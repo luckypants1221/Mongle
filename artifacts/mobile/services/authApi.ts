@@ -13,16 +13,10 @@ export const loginApi = (
 //회원가입
 export const signupApi = (
   name: string,
+  email: string,
   pwd: string,
-  email: string
 ) => {
-  console.log("회원가입 요청", {
-    name,
-    email,
-    pwd,
-  });
-
-  return api.post("/signup", {
+  api.post("/signup", {
     name,
     email,
     pwd,
