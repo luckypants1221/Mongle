@@ -105,8 +105,7 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
 
   async function updateMemo(id: string, memo: string) {
     if (!user) return;
-    const updatedRecord = await api.updateSleepRecord(user.id, id, { memo });
-    const updated = records.map((r) => r.id === id ? updatedRecord : r);
+    const updated = records.map((r) => r.id === id ? { ...r, memo } : r);
     setRecords(updated);
   }
 

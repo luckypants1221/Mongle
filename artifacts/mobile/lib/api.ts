@@ -42,6 +42,26 @@ interface AuthResponse {
   message?: string;
 }
 
+interface SleepRecordResponse {
+  id?: string;
+  sleep_id?: string | number;
+  day?: string;
+  date?: string;
+  sleep_score?: number;
+  score?: number;
+  start_sleep?: string;
+  startTime?: string;
+  end_sleep?: string;
+  endTime?: string;
+  temp_avg?: number;
+  temperature?: number;
+  hum_avg?: number;
+  humidity?: number;
+  duration?: number;
+  durationMinutes?: number;
+  memo?: string;
+}
+
 const localhostApiUrl = Platform.select({
   android: "http://13.125.10.228",
   default: "http://13.125.10.228",
@@ -69,7 +89,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(message || `Request failed with ${response.status}`);
   }
 
-  return response.json() as Promise<T>;
+  const text = await response.text();
+  if (!text) return {} as T;
+
+  return JSON.parse(text) as T;
 }
 
 function normalizeAuthResponse(data: AuthResponse): User {
@@ -93,29 +116,60 @@ function normalizeAuthResponse(data: AuthResponse): User {
 }
 
 function normalizeSleepRecords(data: unknown): SleepRecord[] {
-  if (!Array.isArray(data)) return [];
+  const records = Array.isArray(data)
+    ? data
+    : typeof data === "object" && data !== null && Array.isArray((data as { records?: unknown }).records)
+      ? (data as { records: unknown[] }).records
+      : typeof data === "object" && data !== null && Array.isArray((data as { sleep_records?: unknown }).sleep_records)
+        ? (data as { sleep_records: unknown[] }).sleep_records
+        : [];
 
-  return data.map((item) => {
-    const record = item as Partial<SleepRecord> & {
-      sleep_id?: string | number;
-      sleep_date?: string;
-      start_time?: string;
-      end_time?: string;
-      duration_minutes?: number;
-    };
+  return records.map((item) => {
+    const record = item as SleepRecordResponse;
+    const startDate = record.start_sleep ? new Date(record.start_sleep) : null;
+    const endDate = record.end_sleep ? new Date(record.end_sleep) : null;
+    const day = record.day ?? record.date ?? startDate?.toISOString() ?? "";
 
     return {
-      id: String(record.id ?? record.sleep_id ?? `${record.date ?? record.sleep_date}`),
-      date: String(record.date ?? record.sleep_date ?? ""),
-      startTime: String(record.startTime ?? record.start_time ?? ""),
-      endTime: String(record.endTime ?? record.end_time ?? ""),
-      durationMinutes: Number(record.durationMinutes ?? record.duration_minutes ?? 0),
-      score: Number(record.score ?? 0),
-      temperature: record.temperature,
-      humidity: record.humidity,
+      id: String(record.id ?? record.sleep_id ?? day),
+      date: String(day).split("T")[0],
+      startTime: record.startTime ?? (startDate ? startDate.toTimeString().slice(0, 5) : ""),
+      endTime: record.endTime ?? (endDate ? endDate.toTimeString().slice(0, 5) : ""),
+      durationMinutes: Math.round(Number(record.durationMinutes ?? record.duration ?? 0)),
+      score: Number(record.score ?? record.sleep_score ?? 0),
+      temperature: record.temperature ?? record.temp_avg,
+      humidity: record.humidity ?? record.hum_avg,
       memo: record.memo,
     };
   });
+}
+
+function buildSleepRecordRequest(userId: string, record: Omit<SleepRecord, "id">) {
+  const day = new Date(record.date);
+  const startSleep = new Date(`${record.date}T${record.startTime}:00`);
+  let endSleep = new Date(`${record.date}T${record.endTime}:00`);
+
+  if (endSleep.getTime() < startSleep.getTime()) {
+    endSleep.setDate(endSleep.getDate() + 1);
+  }
+
+  return {
+    id: userId,
+    day: day.toISOString(),
+    sleep_score: record.score,
+    start_sleep: startSleep.toISOString(),
+    end_sleep: endSleep.toISOString(),
+    temp_avg: Math.round(record.temperature ?? 0),
+    hum_avg: Math.round(record.humidity ?? 0),
+    audio_path: "",
+    duration: record.durationMinutes,
+    snoring_count: 0,
+  };
+}
+
+function normalizeCreatedSleepRecord(data: unknown, fallback: SleepRecord): SleepRecord {
+  const records = normalizeSleepRecords([data]);
+  return records[0]?.date ? records[0] : fallback;
 }
 
 export const api = {
@@ -143,10 +197,21 @@ export const api = {
     authToken = null;
   },
 
-  updateUser(userId: string, data: Partial<User>) {
-    return request<User>(`/profile?user_id=${encodeURIComponent(userId)}`, {
+  async updateUser(userId: string, data: User) {
+    const response = await request<AuthResponse>(`/profile/${encodeURIComponent(userId)}`, {
       method: "PUT",
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        user_id: userId,
+        email: data.email,
+        name: data.name,
+      }),
+    });
+    return normalizeAuthResponse({
+      ...data,
+      ...response,
+      id: response.id ?? response.user_id ?? response.userId ?? data.id,
+      name: response.name ?? response.user?.name ?? data.name,
+      email: response.email ?? response.user?.email ?? data.email,
     });
   },
 
@@ -155,18 +220,20 @@ export const api = {
     return normalizeSleepRecords(data);
   },
 
-  createSleepRecord(userId: string, record: Omit<SleepRecord, "id">) {
-    return request<SleepRecord>(`/sleepinfo?id=${encodeURIComponent(userId)}`, {
+  async createSleepRecord(userId: string, record: Omit<SleepRecord, "id">) {
+    const fallback = {
+      ...record,
+      id: `${userId}-${record.date}`,
+    };
+    const response = await request<unknown>("/sleepinfo", {
       method: "POST",
-      body: JSON.stringify(record),
+      body: JSON.stringify(buildSleepRecordRequest(userId, record)),
     });
+    return normalizeCreatedSleepRecord(response, fallback);
   },
 
-  updateSleepRecord(userId: string, recordId: string, data: Partial<SleepRecord>) {
-    return request<SleepRecord>(`/sleepinfo?id=${encodeURIComponent(userId)}&record_id=${encodeURIComponent(recordId)}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    });
+  async updateSleepRecord(_userId: string, _recordId: string, _data: Partial<SleepRecord>) {
+    throw new Error("Sleep record update API is not available in the backend OpenAPI spec");
   },
 
   async getAlarm(_userId: string) {

@@ -1,171 +1,126 @@
 # Mobile API Contract
 
-The mobile app no longer stores users, sleep records, or alarm settings in `AsyncStorage`.
-It calls the configured REST API from `lib/api.ts`.
+The frontend is wired to the FastAPI backend described by:
+
+```txt
+http://13.125.10.228/openapi.json
+```
 
 ## Base URL
 
-Set the API server URL with:
-
-```sh
-EXPO_PUBLIC_API_BASE_URL=https://your-server.example.com/api
-```
-
-For local web development, the default is:
+Default:
 
 ```txt
-http://localhost:3000/api
+http://13.125.10.228
+```
+
+Override with:
+
+```sh
+EXPO_PUBLIC_API_BASE_URL=http://your-server
 ```
 
 ## Auth
 
-### `POST /auth/login`
-
-Request:
+### `POST /signup`
 
 ```json
 {
-  "email": "user@example.com",
-  "pwd": "password"
+  "name": "string",
+  "email": "string",
+  "pwd": "string"
 }
 ```
 
-Response can be either:
+### `POST /login`
 
 ```json
 {
-  "id": "user_1",
-  "name": "User",
-  "email": "user@example.com"
+  "email": "string",
+  "pwd": "string"
 }
 ```
 
-or:
+### `POST /changepw`
 
 ```json
 {
-  "user": {
-    "id": "user_1",
-    "name": "User",
-    "email": "user@example.com"
-  },
-  "token": "optional-access-token"
+  "email": "string",
+  "pwd": "string",
+  "new_pwd": "string"
 }
 ```
 
-When `token` is returned, the app sends it as `Authorization: Bearer <token>`.
-
-### `POST /auth/register`
-
-Request:
+### `POST /delete`
 
 ```json
 {
-  "name": "User",
-  "email": "user@example.com",
-  "pwd": "password"
+  "email": "string",
+  "pwd": "string"
 }
 ```
 
-Response shape is the same as login.
+## Profile
 
-### `PUT /users/:userId`
+### `GET /profile/{user_id}`
 
-Request:
+`user_id` is a path parameter.
+
+### `PUT /profile/{user_id}`
 
 ```json
 {
-  "name": "Updated Name",
-  "email": "updated@example.com"
+  "user_id": "string",
+  "email": "string",
+  "name": "string"
 }
 ```
 
-Response:
+## Sensor
+
+### `POST /sensor`
 
 ```json
 {
-  "id": "user_1",
-  "name": "Updated Name",
-  "email": "updated@example.com"
+  "id": 0,
+  "heartbeat": 0,
+  "temp": 0,
+  "hum": 0,
+  "volume": 0
 }
 ```
+
+### `GET /sensor?id=...`
+
+### `GET /sensor/{date}`
+
+### `PUT /sensor?id=...&time_stamp=...`
+
+### `DELETE /sensor?id=...&time_stamp=...`
 
 ## Sleep Records
 
-### `GET /users/:userId/sleep-records`
+### `GET /sleepinfo?id=...`
 
-Response:
-
-```json
-[
-  {
-    "id": "record_1",
-    "date": "2026-06-08",
-    "startTime": "23:00",
-    "endTime": "07:00",
-    "durationMinutes": 480,
-    "score": 88,
-    "temperature": 23,
-    "humidity": 55,
-    "memo": "optional"
-  }
-]
-```
-
-### `POST /users/:userId/sleep-records`
-
-Request:
+### `POST /sleepinfo`
 
 ```json
 {
-  "date": "2026-06-08",
-  "startTime": "23:00",
-  "endTime": "07:00",
-  "durationMinutes": 480,
-  "score": 88,
-  "temperature": 23,
-  "humidity": 55
+  "id": "string",
+  "day": "2026-06-08T00:00:00.000Z",
+  "sleep_score": 0,
+  "start_sleep": "2026-06-08T23:00:00.000Z",
+  "end_sleep": "2026-06-09T07:00:00.000Z",
+  "temp_avg": 0,
+  "hum_avg": 0,
+  "audio_path": "string",
+  "duration": 0,
+  "snoring_count": 0
 }
 ```
 
-Response: created sleep record with `id`.
+## Notes
 
-### `PUT /users/:userId/sleep-records/:recordId`
-
-Request:
-
-```json
-{
-  "memo": "Updated memo"
-}
-```
-
-Response: updated sleep record.
-
-## Alarm
-
-### `GET /users/:userId/alarm`
-
-Response:
-
-```json
-{
-  "hour": 7,
-  "min": 0,
-  "on": true
-}
-```
-
-### `PUT /users/:userId/alarm`
-
-Request:
-
-```json
-{
-  "hour": 7,
-  "min": 30,
-  "on": true
-}
-```
-
-Response: updated alarm settings.
+- The backend OpenAPI schema does not define response shapes, so the frontend normalizes likely response fields in `lib/api.ts`.
+- Alarm APIs are not present in the current OpenAPI document. The frontend keeps alarm state locally in memory for now.
+- Sleep memo update APIs are not present in the current OpenAPI document. The frontend updates memo text in memory for now.

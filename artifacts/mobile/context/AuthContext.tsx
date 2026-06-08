@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function updateUser(data: Partial<User>) {
     if (!user) return;
-    const updated = await api.updateUser(user.id, data);
+    const updated = await api.updateUser(user.id, { ...user, ...data });
     setUser(updated);
   }
 
