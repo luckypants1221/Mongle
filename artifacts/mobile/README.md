@@ -16,7 +16,7 @@ Expo React Native로 만든 수면 측정 앱입니다.
 cd artifacts/mobile
 
 # 2. 패키지 설치
-npm install
+pnpm install
 
 # 3. 앱 실행
 npx expo start
