@@ -10,7 +10,7 @@ export const loginApi =(
     email: string,
     pwd: string) => api.post("/login", { email, pwd });
 //회원가입
-export const signupApi = (name: string, pwd: string, email: string) => api.post("/signup", { name, email, pwd });
+export const signupApi = (name: string, email: string, pwd: string) => api.post("/signup", { name, email, pwd });
 
 //수면 기록
 export  const sleepinfoApi = (id: string) => api.get(`/sleepinfo?id=${id}`);
