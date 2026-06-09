@@ -83,16 +83,29 @@ function normalizeAuthResponse(data: AuthResponse): User {
     email: user.email,
   };
 }
+console.log("API_BASE_URL =", API_BASE_URL);
+console.log("API_BASE_URL");
+console.log(API_BASE_URL)
 
 export const api = {
   async login(email: string, pwd: string) {
-    const data = await request<AuthResponse>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, pwd }),
-    });
-    return normalizeAuthResponse(data);
-  },
+    const data = await request<any>(
+      "/auth/login",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          email,
+          pwd,
+        }),
+      }
+    );
 
+    console.log("로그인 응답");
+    console.log(data);
+
+    return normalizeAuthResponse(data);
+  }
+  ,
   async register(data: RegisterInput) {
     const response = await request<AuthResponse>("/auth/register", {
       method: "POST",

@@ -15,7 +15,7 @@ export default function SleepRatinScreen() {
 
     const handleSubmit = async () => {
         //API 저장
-        router.replace("/");
+        router.replace("/(tabs)");
     }
 
     return (

@@ -46,7 +46,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useTabBarHeight();
   const { user } = useAuth();
-  const { weeklyRecords, getRecordByDate, activeSession, startSleep } = useSleep();
+  const { weeklyRecords, getRecordByDate, activeSession, startSleep, monthlyAverageDuration, monthlyAverageScore } = useSleep();
 
   const [envOpen, setEnvOpen] = useState<EnvType>(null);
   const [music, setMusic] = useState("none");
@@ -55,15 +55,21 @@ export default function HomeScreen() {
 
   const today = new Date();
   const todayStr = today.toISOString().split("T")[0];
-  const lastRecord = weeklyRecords[weeklyRecords.length - 1];
   const weekDates = getWeekDates();
   const topPad = Platform.OS === "web" ? 56 : insets.top;
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+
+  const selectedRecord =
+    getRecordByDate(selectedDate);
+
+  const lastRecord = selectedRecord;
+
 
   const scoreColor =
     !lastRecord ? colors.mutedForeground
-    : lastRecord.score >= 80 ? "#4CAF50"
-    : lastRecord.score >= 60 ? "#FFE082"
-    : "#EF5350";
+      : lastRecord.score >= 80 ? "#4CAF50"
+        : lastRecord.score >= 60 ? "#FFE082"
+          : "#EF5350";
 
   function handleStartSleep() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -108,20 +114,55 @@ export default function HomeScreen() {
             const str = d.toISOString().split("T")[0];
             const rec = getRecordByDate(str);
             const isToday = str === todayStr;
+            const isSelected = str === selectedDate;
             return (
-              <View key={i} style={styles.dayCol}>
-                <Text style={[styles.dayLabel, { color: isToday ? "#BBDDFF" : "#7A8AA6" }]}>
+              <Pressable
+                key={i}
+                style={styles.dayCol}
+                onPress={() => setSelectedDate(str)}
+              >
+                <Text
+                  style={[
+                    styles.dayLabel,
+                    {
+                      color: isSelected
+                        ? "#BBDDFF"
+                        : "#7A8AA6",
+                    },
+                  ]}
+                >
                   {DAYS_KR[d.getDay()]}
                 </Text>
-                <View style={[
-                  styles.dayCircle,
-                  isToday
-                    ? { backgroundColor: "#BBDDFF" }
-                    : rec
-                    ? { backgroundColor: "rgba(187,221,255,0.12)", borderColor: "#BBDDFF50", borderWidth: 1 }
-                    : { borderColor: "#353860", borderWidth: 1 },
-                ]}>
-                  <Text style={[styles.dayNum, { color: isToday ? "#1E203C" : rec ? "#BBDDFF" : "#7A8AA6" }]}>
+                <View
+                  style={[
+                    styles.dayCircle,
+                    isSelected
+                      ? { backgroundColor: "#BBDDFF" }
+                      : rec
+                        ? {
+                          backgroundColor: "rgba(187,221,255,0.12)",
+                          borderColor: "#BBDDFF50",
+                          borderWidth: 1,
+                        }
+                        : {
+                          borderColor: "#353860",
+                          borderWidth: 1,
+                        },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.dayNum,
+                      {
+                        color:
+                          isSelected
+                            ? "#1E203C"
+                            : rec
+                              ? "#BBDDFF"
+                              : "#7A8AA6"
+                      }
+                    ]}
+                  >
                     {d.getDate()}
                   </Text>
                 </View>
@@ -130,7 +171,7 @@ export default function HomeScreen() {
                     backgroundColor: rec.score >= 80 ? "#4CAF50" : rec.score >= 60 ? "#FFE082" : "#EF5350",
                   }]} />
                 )}
-              </View>
+              </Pressable>
             );
           })}
         </View>
