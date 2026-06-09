@@ -1,67 +1,41 @@
-# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
-
-# compiled output
-dist
-tmp
-out-tsc
-*.tsbuildinfo
-.expo
-.expo-shared
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
 # dependencies
-node_modules
+node_modules/
 
-# environment variables / secrets
-.env
-.env.*
-!.env.example
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
 
-# Replit internal files (agent skills, state, cache)
-.local/
-.agents/
-.cache/
-.upm/
+# Native
+ios/
+android/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
 
-# Personal attached files (screenshots, downloads, KakaoTalk images)
-attached_assets/
+# Metro
+.metro-health-check*
 
-# Local logs
-*.log
-/tmp/
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
 
-# IDEs and editors
-/.idea
-.project
-.classpath
-.c9/
-*.launch
-.settings/
-*.sublime-workspace
-
-# IDE - VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-
-# misc
-/.sass-cache
-/connect.lock
-/coverage
-/libpeerconnection.log
-npm-debug.log
-yarn-error.log
-testem.log
-/typings
-
-# System Files
+# macOS
 .DS_Store
-Thumbs.db
+*.pem
 
-.cursor/rules/nx-rules.mdc
-.github/instructions/nx.instructions.md
+# local env files
+.env*.local
 
-# Replit
-.cache/
-.local/
+# typescript
+*.tsbuildinfo
+.vercel
+
+.env

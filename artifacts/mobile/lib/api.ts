@@ -41,15 +41,16 @@ interface AuthResponse {
   user?: User;
   token?: string;
   id?: string;
-  user_id?: string;
+  user_id?: string | number;
   userId?: string;
+  user_name?: string;
   name?: string;
   email?: string;
   message?: string;
 }
 
 interface SleepRecordResponse {
-  id?: string;
+  id?: string | number;
   sleep_id?: string | number;
   day?: string;
   date?: string;
@@ -68,7 +69,7 @@ interface SleepRecordResponse {
   memo?: string;
 }
 
-const localhostApiUrl = Platform.select({
+const defaultApiUrl = Platform.select({
   android: "http://13.125.10.228",
   default: "http://13.125.10.228",
 });
@@ -76,7 +77,7 @@ const localhostApiUrl = Platform.select({
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ??
   Constants.expoConfig?.extra?.apiBaseUrl ??
-  localhostApiUrl;
+  defaultApiUrl;
 
 let authToken: string | null = null;
 
@@ -109,16 +110,31 @@ function normalizeAuthResponse(data: AuthResponse): User {
   if (data.token) authToken = data.token;
   const user = (data.user ?? data) as AuthResponse;
   const id = user.id ?? user.user_id ?? user.userId;
+  const name = user.name ?? user.user_name;
 
-  if (!id || !user.name || !user.email) {
+  if (!id || !name || !user.email) {
     throw new Error("Auth response must include user id, name and email");
   }
 
   return {
-    id,
-    name: user.name,
+    id: String(id),
+    name,
     email: user.email,
   };
+}
+
+function toDate(value?: string) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().split("T")[0];
+  return value.split("T")[0];
+}
+
+function toTime(value?: string) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toTimeString().slice(0, 5);
+  return value.includes("T") ? value.split("T")[1]?.slice(0, 5) ?? "" : value;
 }
 
 function normalizeSleepRecords(data: unknown): SleepRecord[] {
@@ -130,46 +146,43 @@ function normalizeSleepRecords(data: unknown): SleepRecord[] {
         ? (data as { sleep_records: unknown[] }).sleep_records
         : [];
 
-  return records.map((item) => {
+  return records.map((item, index) => {
     const record = item as SleepRecordResponse;
-    const startDate = record.start_sleep ? new Date(record.start_sleep) : null;
-    const endDate = record.end_sleep ? new Date(record.end_sleep) : null;
-    const day = record.day ?? record.date ?? startDate?.toISOString() ?? "";
+    const start = record.start_sleep ?? record.startTime;
+    const end = record.end_sleep ?? record.endTime;
+    const date = toDate(record.day ?? record.date ?? start);
 
     return {
-      id: String(record.id ?? record.sleep_id ?? day),
-      date: String(day).split("T")[0],
-      startTime: record.startTime ?? (startDate ? startDate.toTimeString().slice(0, 5) : ""),
-      endTime: record.endTime ?? (endDate ? endDate.toTimeString().slice(0, 5) : ""),
+      id: String(record.sleep_id ?? record.id ?? `${date}-${index}`),
+      date,
+      startTime: toTime(start),
+      endTime: toTime(end),
       durationMinutes: Math.round(Number(record.durationMinutes ?? record.duration ?? 0)),
       score: Number(record.score ?? record.sleep_score ?? 0),
       temperature: record.temperature ?? record.temp_avg,
       humidity: record.humidity ?? record.hum_avg,
-      memo: record.memo,
+      memo: record.memo ?? "",
     };
   });
 }
 
+function toApiDateTime(date: string, time: string) {
+  if (time.includes("T")) return new Date(time).toISOString();
+  return new Date(`${date}T${time}:00`).toISOString();
+}
+
 function buildSleepRecordRequest(userId: string, record: Omit<SleepRecord, "id">) {
-  const day = new Date(record.date);
-  const startSleep = new Date(`${record.date}T${record.startTime}:00`);
-  let endSleep = new Date(`${record.date}T${record.endTime}:00`);
-
-  if (endSleep.getTime() < startSleep.getTime()) {
-    endSleep.setDate(endSleep.getDate() + 1);
-  }
-
   return {
-    id: userId,
-    day: day.toISOString(),
+    id: Number(userId),
     sleep_score: record.score,
-    start_sleep: startSleep.toISOString(),
-    end_sleep: endSleep.toISOString(),
+    start_sleep: toApiDateTime(record.date, record.startTime),
+    end_sleep: toApiDateTime(record.date, record.endTime),
     temp_avg: Math.round(record.temperature ?? 0),
     hum_avg: Math.round(record.humidity ?? 0),
     audio_path: "",
     duration: record.durationMinutes,
     snoring_count: 0,
+    memo: record.memo ?? "",
   };
 }
 
@@ -182,9 +195,9 @@ export const api = {
   async login(email: string, pwd: string) {
     const data = await request<AuthResponse>("/login", {
       method: "POST",
-      body: JSON.stringify({ email, pwd }),
+      body: JSON.stringify({ name: "test", email, pwd }),
     });
-    return normalizeAuthResponse(data);
+    return normalizeAuthResponse({ ...data, email });
   },
 
   async register(data: RegisterInput) {
@@ -196,7 +209,11 @@ export const api = {
         pwd: data.pwd,
       }),
     });
-    return normalizeAuthResponse(response);
+    return normalizeAuthResponse({
+      ...response,
+      name: response.name ?? response.user_name ?? data.name,
+      email: response.email ?? data.email,
+    });
   },
 
   async changePassword(data: ChangePasswordInput) {
@@ -218,7 +235,7 @@ export const api = {
     const response = await request<AuthResponse>(`/profile/${encodeURIComponent(userId)}`, {
       method: "PUT",
       body: JSON.stringify({
-        user_id: userId,
+        user_id: Number(userId),
         email: data.email,
         name: data.name,
       }),
@@ -226,8 +243,8 @@ export const api = {
     return normalizeAuthResponse({
       ...data,
       ...response,
-      id: response.id ?? response.user_id ?? response.userId ?? data.id,
-      name: response.name ?? response.user?.name ?? data.name,
+      id: String(response.id ?? response.user_id ?? response.userId ?? data.id),
+      name: response.name ?? response.user?.name ?? response.user_name ?? data.name,
       email: response.email ?? response.user?.email ?? data.email,
     });
   },
@@ -249,8 +266,19 @@ export const api = {
     return normalizeCreatedSleepRecord(response, fallback);
   },
 
-  async updateSleepRecord(_userId: string, _recordId: string, _data: Partial<SleepRecord>) {
-    throw new Error("Sleep record update API is not available in the backend OpenAPI spec");
+  async updateSleepRecord(userId: string, recordId: string, data: Partial<SleepRecord>) {
+    const current = {
+      id: recordId,
+      date: data.date ?? new Date().toISOString().split("T")[0],
+      startTime: data.startTime ?? "00:00",
+      endTime: data.endTime ?? "00:00",
+      durationMinutes: data.durationMinutes ?? 0,
+      score: data.score ?? 0,
+      temperature: data.temperature,
+      humidity: data.humidity,
+      memo: data.memo ?? "",
+    };
+    return this.createSleepRecord(userId, current);
   },
 
   async getAlarm(_userId: string) {
