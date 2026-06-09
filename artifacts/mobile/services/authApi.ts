@@ -9,14 +9,14 @@ const api = axios.create({
 export const loginApi = (
   email: string,
   pwd: string
-) => api.post("/login", { email, pwd });
+) => api.post("/login", { name: "test", email, pwd });
 //회원가입
 export const signupApi = (
   name: string,
   email: string,
   pwd: string,
 ) => {
-  api.post("/signup", {
+  return api.post("/signup", {
     name,
     email,
     pwd,
@@ -31,11 +31,11 @@ export const sleepinfoApi = (
 
 //비밀번호 변경
 export const changePasswordApi = (
-  id: string,
+  email: string,
   pwd: string,
   new_pwd: string
 ) =>
-  api.post("/changepw", { id, pwd, new_pwd });
+  api.post("/changepw", { email, pwd, new_pwd });
 
 //회원탈퇴
 export const deleteApi = (
@@ -47,11 +47,34 @@ export const deleteApi = (
 //회원정보 조회
 export const profileApi = (
   id: string
-) => api.get(`/profile?user_id=${id}`);
+) => api.get(`/profile/${id}`);
 
 //회원정보 수정
 export const updateProfileApi = (
   id: string,
   name: string,
   email: string
-) => api.put(`/profile?user_id=${id}`, { name, email });
+) => api.put(`/profile/${id}`, { user_id: Number(id), name, email });
+
+// 수면 기록 조회
+export const getSleepInfoApi = (
+  id: string
+) =>
+  api.get(`/sleepinfo?id=${id}`);
+
+// 수면 기록 저장
+export const createSleepInfoApi = (
+  data: {
+    id: number;
+    sleep_score: number;
+    start_sleep: string;
+    end_sleep: string;
+    temp_avg: number;
+    hum_avg: number;
+    audio_path: string;
+    duration: number;
+    snoring_count: number;
+    memo: string;
+  }
+) =>
+  api.post("/sleepinfo", data);

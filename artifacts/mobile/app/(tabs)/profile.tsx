@@ -89,7 +89,8 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useTabBarHeight();
   const { user, logout } = useAuth();
-  const { averageDuration, averageScore, records, alarmHour, alarmMin, alarmOn, setAlarm, setAlarmOn } = useSleep();
+  const { averageDuration, averageScore, records, alarmHour, alarmMin, alarmOn, setAlarm, setAlarmOn, monthlyAverageDuration, monthlyAverageScore,
+  } = useSleep();
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [draftHour, setDraftHour] = useState(7);
@@ -144,6 +145,7 @@ export default function ProfileScreen() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
+  const email = user?.email;
 
   const {
     user: currentUser,
@@ -155,6 +157,25 @@ export default function ProfileScreen() {
     console.log(currentUser);
     if (!currentUser) return;
 
+    if (newEmail.trim() !== currentUser.email) {
+      Alert.alert(
+        "오류",
+        "이메일이 일치하지 않습니다."
+      );
+      return;
+    }
+    console.log("email:", currentUser.email);
+    console.log("currentPassword:", currentPassword);
+    console.log("newPassword:", newPassword);
+
+    if (!currentPassword.trim()) {
+      Alert.alert(
+        "오류",
+        "현재 비밀번호를 입력해주세요."
+      );
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
       Alert.alert(
         "오류",
@@ -164,7 +185,7 @@ export default function ProfileScreen() {
     }
 
     const success = await changePassword(
-      currentUser.id,
+      currentUser.email,
       currentPassword,
       newPassword
     );
@@ -178,7 +199,7 @@ export default function ProfileScreen() {
     } else {
       Alert.alert(
         "오류",
-        "현재 비밀번호가 올바르지 않습니다."
+        "현재 이메일이 올바르지 않습니다."
       );
     }
   }
@@ -243,7 +264,7 @@ export default function ProfileScreen() {
                       { color: colors.mutedForeground }
                     ]}
                   >
-                    현재 비밀번호
+                    이메일 확인
                   </Text>
 
                   <View
@@ -259,9 +280,9 @@ export default function ProfileScreen() {
                     />
 
                     <TextInput
-                      value={newEmail}
+                      // value={newEmail}
                       onChangeText={setNewEmail}
-                      placeholder="현재 비밀번호 입력"
+                      placeholder="이메일 입력"
                       placeholderTextColor={colors.mutedForeground}
                       keyboardType="email-address"
                       autoCapitalize="none"
@@ -273,6 +294,39 @@ export default function ProfileScreen() {
                   </View>
 
                   {/* 비밀번호 */}
+                  <Text
+                    style={[
+                      styles.userLabel,
+                      { color: colors.mutedForeground }
+                    ]}
+                  >
+                    현재 비밀번호
+                  </Text>
+
+                  <View
+                    style={[
+                      styles.inputIconWrap,
+                      { backgroundColor: colors.surface }
+                    ]}
+                  >
+                    <Feather
+                      name="lock"
+                      size={18}
+                      color="#FF8A80"
+                    />
+
+                    <TextInput
+                      value={currentPassword}
+                      onChangeText={setCurrentPassword}
+                      placeholder="현재 비밀번호"
+                      placeholderTextColor={colors.mutedForeground}
+                      secureTextEntry
+                      style={{
+                        flex: 1,
+                        color: colors.text,
+                      }}
+                    />
+                  </View>
                   <Text
                     style={[
                       styles.userLabel,
@@ -334,7 +388,10 @@ export default function ProfileScreen() {
 
                   <Pressable
                     style={styles.userSaveBtn}
-                    onPress={handleProfileUpdate}
+                    onPress={() => {
+                      // console.log("버튼 눌림");
+                      handleProfileUpdate();
+                    }}
                   >
                     <LinearGradient
                       colors={["#FFE082", "#FFD040"]}
@@ -356,12 +413,34 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.miniStatsRow}>
             {[
-              { label: "총 기록", value: `${records.length}회`, icon: "calendar" as const, color: "#BBDDFF" },
-              { label: "평균 수면", value: `${Math.floor(averageDuration / 60)}h`, icon: "clock" as const, color: "#80CBC4" },
-              { label: "평균 점수", value: `${averageScore}점`, icon: "star" as const, color: "#FFE082" },
+              {
+                label: "총 기록", value:
+                  records.length > 0
+                    ? `${records.length}회`
+                    : "-", icon: "calendar" as const, color: "#BBDDFF"
+              },
+              {
+                label: "한 달 평균 수면",
+                value:
+                  monthlyAverageDuration > 0
+                    ? `${monthlyAverageDuration}h`
+                    : "-",
+                icon: "moon" as const,
+                color: "#FFE082",
+              },
+
+              {
+                label: "한 달 평균 점수",
+                value:
+                  monthlyAverageScore > 0
+                    ? `${monthlyAverageScore}점`
+                    : "-",
+                icon: "award" as const,
+                color: "#80CBC4",
+              },
             ].map(({ label, value, icon, color }) => (
               <View key={label} style={[styles.miniStat, { backgroundColor: "rgba(187,221,255,0.06)" }]}>
-                <Feather name={icon} size={16} color={color} />
+                {/* <Feather name={icon} size={16} color={color} /> */}
                 <Text style={styles.miniStatVal}>{value}</Text>
                 <Text style={styles.miniStatLabel}>{label}</Text>
               </View>

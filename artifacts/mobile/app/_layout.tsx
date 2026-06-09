@@ -17,6 +17,8 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { SleepProvider } from "@/context/SleepContext";
+// import { requestNotificationPermission } from "@/services/notificationService";
+
 
 SplashScreen.preventAutoHideAsync();
 
@@ -60,6 +62,10 @@ export default function RootLayout() {
   if (!fontsLoaded && !fontError) {
     return <View style={{ flex: 1, backgroundColor: "#1E203C" }} />;
   }
+
+  // useEffect(() => {
+  //   requestNotificationPermission();
+  // }, []);
 
   return (
     <SafeAreaProvider>
