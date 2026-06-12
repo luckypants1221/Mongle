@@ -7,14 +7,36 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSleep } from "@/context/SleepContext";
 
 export default function SleepRatinScreen() {
+    const {
+        setSleepScore,
+        endSleep,
+    } = useSleep();
     const [totalRating, setTotalRating] = useState(0);
     const [tempRating, setTempRating] = useState(0);
     const [humRating, setHumRating] = useState(0);
 
     const handleSubmit = async () => {
-        //API 저장
+        console.log("수면 종료 버튼 클릭");
+        const score = Math.round(
+            (
+                totalRating * 0.6 +
+                tempRating * 0.2 +
+                humRating * 0.2
+            ) / 5 * 100
+        );
+
+        console.log(
+            "계산된 수면점수",
+            score
+        );
+        console.log(score);
+        setSleepScore(score);
+
+        await endSleep();
+
         router.replace("/(tabs)");
     }
 

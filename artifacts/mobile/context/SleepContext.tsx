@@ -28,8 +28,17 @@ interface SleepContextType {
     humidity: number;
   } | null;
 
+  sleepScore: number;
+
+  setSleepScore: (
+    score: number
+  ) => void;
+
   startSleep: () => void;
-  endSleep: () => Promise<SleepRecord | null>;
+  endSleep: (
+    score?: number
+  ) => Promise<SleepRecord | null>;
+
 
   updateMemo: (
     id: string,
@@ -57,7 +66,9 @@ interface SleepContextType {
   setAlarmOn: (
     on: boolean
   ) => Promise<void>;
+  clearSession: () => void;
 }
+
 
 const SleepContext =
   createContext<SleepContextType | null>(
@@ -79,6 +90,11 @@ export function SleepProvider({
     useState<
       SleepContextType["activeSession"]
     >(null);
+
+
+  const [sleepScore, setSleepScore] =
+    useState(0);
+
 
   // 임시 알람 상태
   const [alarmHour, setAlarmHour] =
@@ -176,6 +192,10 @@ export function SleepProvider({
     // 서버 API 없음
   }
 
+
+  function clearSession() {
+    setActiveSession(null);
+  }
   function startSleep() {
     setActiveSession({
       startTime: new Date(),
@@ -188,7 +208,11 @@ export function SleepProvider({
     });
   }
 
-  async function endSleep(): Promise<SleepRecord | null> {
+  async function endSleep(
+    score?: number
+  ): Promise<SleepRecord | null> {
+    console.log("endSleep 진입");
+
     if (!activeSession || !user)
       return null;
 
@@ -202,21 +226,15 @@ export function SleepProvider({
           60000
         );
 
-      const score = Math.min(
-        100,
-        Math.max(
-          40,
-          70 +
-          Math.floor(
-            durationMinutes / 10
-          )
-        )
+      console.log(
+        "저장 직전 sleepScore",
+        sleepScore
       );
 
       const payload = {
         id: Number(user.id),
 
-        sleep_score: score,
+        sleep_score: score ?? sleepScore,
 
         start_sleep:
           activeSession.startTime.toISOString(),
@@ -239,6 +257,7 @@ export function SleepProvider({
           ),
 
         snoring_count: 0,
+        memo: "",
       };
 
       const res =
@@ -380,6 +399,7 @@ export function SleepProvider({
 
         startSleep,
         endSleep,
+        clearSession,
 
         updateMemo,
 
@@ -396,6 +416,9 @@ export function SleepProvider({
 
         setAlarm,
         setAlarmOn,
+
+        sleepScore,
+        setSleepScore,
       }}
     >
       {children}
