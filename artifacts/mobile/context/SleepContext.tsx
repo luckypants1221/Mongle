@@ -29,6 +29,7 @@ const SleepContext = createContext<SleepContextType | null>(null);
 
 function getSleepRecordList(data: any): any[] {
   if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.value)) return data.value;
   if (Array.isArray(data?.records)) return data.records;
   if (Array.isArray(data?.sleep_records)) return data.sleep_records;
   return [];
@@ -45,12 +46,13 @@ function toTimeString(value?: string) {
   if (!value) return "";
   const parsed = new Date(value);
   if (!Number.isNaN(parsed.getTime())) return parsed.toTimeString().slice(0, 5);
-  return value.includes("T") ? value.split("T")[1]?.slice(0, 5) ?? "" : value;
+  return value.includes("T") ? value.split("T")[1]?.slice(0, 5) ?? "" : value.slice(0, 5);
 }
 
 function buildDateTime(date: string, time: string) {
   if (time.includes("T")) return new Date(time);
-  return new Date(`${date}T${time}:00`);
+  const normalizedTime = time.length === 5 ? `${time}:00` : time;
+  return new Date(`${date}T${normalizedTime}`);
 }
 
 function buildSleepInfoPayload(userId: string, record: SleepRecord) {

@@ -134,17 +134,19 @@ function toTime(value?: string) {
   if (!value) return "";
   const parsed = new Date(value);
   if (!Number.isNaN(parsed.getTime())) return parsed.toTimeString().slice(0, 5);
-  return value.includes("T") ? value.split("T")[1]?.slice(0, 5) ?? "" : value;
+  return value.includes("T") ? value.split("T")[1]?.slice(0, 5) ?? "" : value.slice(0, 5);
 }
 
 function normalizeSleepRecords(data: unknown): SleepRecord[] {
   const records = Array.isArray(data)
     ? data
-    : typeof data === "object" && data !== null && Array.isArray((data as { records?: unknown }).records)
-      ? (data as { records: unknown[] }).records
-      : typeof data === "object" && data !== null && Array.isArray((data as { sleep_records?: unknown }).sleep_records)
-        ? (data as { sleep_records: unknown[] }).sleep_records
-        : [];
+    : typeof data === "object" && data !== null && Array.isArray((data as { value?: unknown }).value)
+      ? (data as { value: unknown[] }).value
+      : typeof data === "object" && data !== null && Array.isArray((data as { records?: unknown }).records)
+        ? (data as { records: unknown[] }).records
+        : typeof data === "object" && data !== null && Array.isArray((data as { sleep_records?: unknown }).sleep_records)
+          ? (data as { sleep_records: unknown[] }).sleep_records
+          : [];
 
   return records.map((item, index) => {
     const record = item as SleepRecordResponse;
@@ -168,7 +170,8 @@ function normalizeSleepRecords(data: unknown): SleepRecord[] {
 
 function toApiDateTime(date: string, time: string) {
   if (time.includes("T")) return new Date(time).toISOString();
-  return new Date(`${date}T${time}:00`).toISOString();
+  const normalizedTime = time.length === 5 ? `${time}:00` : time;
+  return new Date(`${date}T${normalizedTime}`).toISOString();
 }
 
 function buildSleepRecordRequest(userId: string, record: Omit<SleepRecord, "id">) {
