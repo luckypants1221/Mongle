@@ -17,6 +17,7 @@ export interface SleepRecord {
   temperature?: number;
   humidity?: number;
   memo?: string;
+  createdAt?: string;
 }
 
 export interface AlarmSettings {
@@ -67,6 +68,8 @@ interface SleepRecordResponse {
   duration?: number;
   durationMinutes?: number;
   memo?: string;
+  created_at?: string;
+  createdAt?: string;
 }
 
 const defaultApiUrl = Platform.select({
@@ -148,7 +151,7 @@ function normalizeSleepRecords(data: unknown): SleepRecord[] {
           ? (data as { sleep_records: unknown[] }).sleep_records
           : [];
 
-  return records.map((item, index) => {
+  const normalized = records.map((item, index) => {
     const record = item as SleepRecordResponse;
     const start = record.start_sleep ?? record.startTime;
     const end = record.end_sleep ?? record.endTime;
@@ -164,8 +167,21 @@ function normalizeSleepRecords(data: unknown): SleepRecord[] {
       temperature: record.temperature ?? record.temp_avg,
       humidity: record.humidity ?? record.hum_avg,
       memo: record.memo ?? "",
+      createdAt: record.createdAt ?? record.created_at,
     };
   });
+
+  return dedupeSleepRecords(normalized);
+}
+
+function dedupeSleepRecords(records: SleepRecord[]) {
+  const byDate = new Map<string, SleepRecord>();
+
+  records.forEach((record) => {
+    byDate.set(record.date, record);
+  });
+
+  return Array.from(byDate.values());
 }
 
 function toApiDateTime(date: string, time: string) {

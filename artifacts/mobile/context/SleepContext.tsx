@@ -92,7 +92,18 @@ function normalizeSleepRecord(item: any, userId: string, index: number): SleepRe
     temperature: item.temp_avg ?? item.temperature,
     humidity: item.hum_avg ?? item.humidity,
     memo: item.memo ?? "",
+    createdAt: item.created_at ?? item.createdAt,
   };
+}
+
+function dedupeSleepRecords(records: SleepRecord[]) {
+  const byDate = new Map<string, SleepRecord>();
+
+  records.forEach((record) => {
+    byDate.set(record.date, record);
+  });
+
+  return Array.from(byDate.values());
 }
 
 export function SleepProvider({ children }: { children: React.ReactNode }) {
@@ -122,7 +133,7 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
       const converted = getSleepRecordList(res.data).map((item, index) =>
         normalizeSleepRecord(item, userId, index)
       );
-      setRecords(converted);
+      setRecords(dedupeSleepRecords(converted));
     } catch (error) {
       console.log("Failed to load sleep records", error);
     }
