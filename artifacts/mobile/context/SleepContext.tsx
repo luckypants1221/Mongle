@@ -72,7 +72,7 @@ function buildSleepInfoPayload(userId: string, record: SleepRecord) {
     hum_avg: Math.round(record.humidity ?? 0),
     audio_path: "",
     duration: record.durationMinutes,
-    snoring_count: 0,
+    snoring_count: Math.round(record.snoringCount ?? 0),
     memo: record.memo ?? "",
   };
 }
@@ -91,6 +91,7 @@ function normalizeSleepRecord(item: any, userId: string, index: number): SleepRe
     endTime: toTimeString(endSleep),
     temperature: item.temp_avg ?? item.temperature,
     humidity: item.hum_avg ?? item.humidity,
+    snoringCount: Number(item.snoring_count ?? item.snoringCount ?? 0),
     memo: item.memo ?? "",
     createdAt: item.created_at ?? item.createdAt,
   };
@@ -173,6 +174,7 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
         score,
         temperature: activeSession.temperature,
         humidity: activeSession.humidity,
+        snoringCount: 0,
         memo: "",
       };
 

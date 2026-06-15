@@ -194,6 +194,7 @@ export default function RecordsScreen() {
                   { icon: "moon" as const, label: "취침 시각", value: selectedRecord.startTime, color: "#BBDDFF" },
                   { icon: "sun" as const, label: "기상 시각", value: selectedRecord.endTime, color: "#FFE082" },
                   { icon: "clock" as const, label: "수면 시간", value: fmtDuration(selectedRecord.durationMinutes), color: "#80CBC4" },
+                  { icon: "volume-x" as const, label: "코골이 횟수", value: `${selectedRecord.snoringCount ?? 0}회`, color: "#F48FB1" },
                   { icon: "thermometer" as const, label: "온도 / 습도", value: `${selectedRecord.temperature ?? "--"}°C / ${selectedRecord.humidity ?? "--"}%`, color: colors.mutedForeground },
                 ].map(({ icon, label, value, color }) => (
                   <View key={label} style={[styles.detailItem, { backgroundColor: colors.surface }]}>
