@@ -90,7 +90,7 @@ export default function RecordsScreen() {
       const { sound } = await Audio.Sound.createAsync({ uri: selectedRecord.audioPath });
       snoreSoundRef.current = sound;
       setPlayingSnoreAudio(true);
-      sound.setOnPlaybackStatusUpdate((status) => {
+      sound.setOnPlaybackStatusUpdate((status: any) => {
         if ("isLoaded" in status && status.isLoaded && status.didJustFinish) {
           void unloadSnoreAudio();
         }
