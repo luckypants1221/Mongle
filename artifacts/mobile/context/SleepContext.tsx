@@ -1,4 +1,6 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { Audio } from "expo-av";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
 
 import { useAuth } from "@/context/AuthContext";
 import type { SleepRecord } from "@/lib/api";
@@ -26,6 +28,10 @@ interface SleepContextType {
 }
 
 const SleepContext = createContext<SleepContextType | null>(null);
+
+const SNORE_DB_THRESHOLD = -42;
+const SNORE_EVENT_COOLDOWN_MS = 3500;
+const SNORE_ARMING_DELAY_MS = 10000;
 
 function getSleepRecordList(data: any): any[] {
   if (Array.isArray(data)) return data;
@@ -70,7 +76,7 @@ function buildSleepInfoPayload(userId: string, record: SleepRecord) {
     end_sleep: endSleep.toISOString(),
     temp_avg: Math.round(record.temperature ?? 0),
     hum_avg: Math.round(record.humidity ?? 0),
-    audio_path: "",
+    audio_path: record.audioPath ?? "",
     duration: record.durationMinutes,
     snoring_count: Math.round(record.snoringCount ?? 0),
     memo: record.memo ?? "",
@@ -92,6 +98,7 @@ function normalizeSleepRecord(item: any, userId: string, index: number): SleepRe
     temperature: item.temp_avg ?? item.temperature,
     humidity: item.hum_avg ?? item.humidity,
     snoringCount: Number(item.snoring_count ?? item.snoringCount ?? 0),
+    audioPath: item.audio_path ?? item.audioPath ?? "",
     memo: item.memo ?? "",
     createdAt: item.created_at ?? item.createdAt,
   };
@@ -114,6 +121,17 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   const [alarmHour, setAlarmHour] = useState(7);
   const [alarmMin, setAlarmMin] = useState(0);
   const [alarmOn, setAlarmOnState] = useState(true);
+  const snoreRecordingRef = useRef<Audio.Recording | null>(null);
+  const snoreCountRef = useRef(0);
+  const lastSnoreAtRef = useRef(0);
+  const recordingStartedAtRef = useRef(0);
+  const recordingRequestedRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      void stopSnoreRecording();
+    };
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -155,6 +173,88 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
       temperature: 22 + Math.floor(Math.random() * 5),
       humidity: 50 + Math.floor(Math.random() * 20),
     });
+    recordingRequestedRef.current = true;
+    void startSnoreRecording();
+  }
+
+  async function startSnoreRecording() {
+    if (Platform.OS === "web" || snoreRecordingRef.current || !recordingRequestedRef.current) return;
+
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) return;
+
+      snoreCountRef.current = 0;
+      lastSnoreAtRef.current = 0;
+      recordingStartedAtRef.current = Date.now();
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      if (!recordingRequestedRef.current) return;
+
+      const { recording } = await Audio.Recording.createAsync(
+        {
+          ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+          isMeteringEnabled: true,
+        },
+        handleRecordingStatus,
+        1000
+      );
+
+      snoreRecordingRef.current = recording;
+    } catch (error) {
+      console.log("Failed to start snore recording", error);
+    }
+  }
+
+  function handleRecordingStatus(status: any) {
+    if (!status?.isRecording || typeof status.metering !== "number") return;
+
+    const now = Date.now();
+    const isArmed = now - recordingStartedAtRef.current >= SNORE_ARMING_DELAY_MS;
+    const isLoudEnough = status.metering >= SNORE_DB_THRESHOLD;
+    const cooledDown = now - lastSnoreAtRef.current >= SNORE_EVENT_COOLDOWN_MS;
+
+    if (isArmed && isLoudEnough && cooledDown) {
+      snoreCountRef.current += 1;
+      lastSnoreAtRef.current = now;
+    }
+  }
+
+  async function stopSnoreRecording() {
+    const recording = snoreRecordingRef.current;
+    recordingRequestedRef.current = false;
+    snoreRecordingRef.current = null;
+
+    if (!recording) {
+      return {
+        audioPath: "",
+        snoringCount: snoreCountRef.current,
+      };
+    }
+
+    try {
+      await recording.stopAndUnloadAsync();
+      const audioPath = recording.getURI() ?? "";
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      });
+
+      return {
+        audioPath: snoreCountRef.current > 0 ? audioPath : "",
+        snoringCount: snoreCountRef.current,
+      };
+    } catch (error) {
+      console.log("Failed to stop snore recording", error);
+      return {
+        audioPath: "",
+        snoringCount: snoreCountRef.current,
+      };
+    }
   }
 
   async function endSleep(): Promise<SleepRecord | null> {
@@ -162,6 +262,7 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const endTime = new Date();
+      const snoreResult = await stopSnoreRecording();
       const durationMinutes = Math.round((endTime.getTime() - activeSession.startTime.getTime()) / 60000);
       const date = activeSession.startTime.toISOString().split("T")[0];
       const score = Math.min(100, Math.max(40, 70 + Math.floor(durationMinutes / 10)));
@@ -174,7 +275,8 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
         score,
         temperature: activeSession.temperature,
         humidity: activeSession.humidity,
-        snoringCount: 0,
+        snoringCount: snoreResult.snoringCount,
+        audioPath: snoreResult.audioPath,
         memo: "",
       };
 

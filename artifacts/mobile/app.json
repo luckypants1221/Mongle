@@ -19,6 +19,9 @@
     },
     "android": {
       "backgroundColor": "#1E203C",
+      "permissions": [
+        "RECORD_AUDIO"
+      ],
       "statusBar": {
         "backgroundColor": "#00000000",
         "translucent": true,
@@ -31,7 +34,13 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "수면 중 코골이를 감지하고 녹음하기 위해 마이크 권한이 필요합니다."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

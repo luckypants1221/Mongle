@@ -17,6 +17,7 @@ export interface SleepRecord {
   temperature?: number;
   humidity?: number;
   snoringCount?: number;
+  audioPath?: string;
   memo?: string;
   createdAt?: string;
 }
@@ -70,6 +71,8 @@ interface SleepRecordResponse {
   durationMinutes?: number;
   snoring_count?: number;
   snoringCount?: number;
+  audio_path?: string;
+  audioPath?: string;
   memo?: string;
   created_at?: string;
   createdAt?: string;
@@ -170,6 +173,7 @@ function normalizeSleepRecords(data: unknown): SleepRecord[] {
       temperature: record.temperature ?? record.temp_avg,
       humidity: record.humidity ?? record.hum_avg,
       snoringCount: Number(record.snoringCount ?? record.snoring_count ?? 0),
+      audioPath: record.audioPath ?? record.audio_path ?? "",
       memo: record.memo ?? "",
       createdAt: record.createdAt ?? record.created_at,
     };
@@ -202,7 +206,7 @@ function buildSleepRecordRequest(userId: string, record: Omit<SleepRecord, "id">
     end_sleep: toApiDateTime(record.date, record.endTime),
     temp_avg: Math.round(record.temperature ?? 0),
     hum_avg: Math.round(record.humidity ?? 0),
-    audio_path: "",
+    audio_path: record.audioPath ?? "",
     duration: record.durationMinutes,
     snoring_count: Math.round(record.snoringCount ?? 0),
     memo: record.memo ?? "",
@@ -300,6 +304,7 @@ export const api = {
       temperature: data.temperature,
       humidity: data.humidity,
       snoringCount: data.snoringCount ?? 0,
+      audioPath: data.audioPath ?? "",
       memo: data.memo ?? "",
     };
     return this.createSleepRecord(userId, current);

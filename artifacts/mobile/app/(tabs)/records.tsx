@@ -1,6 +1,7 @@
 import { Feather } from "@/components/Icon";
+import { Audio } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Platform,
@@ -37,13 +38,22 @@ export default function RecordsScreen() {
   const [selectedDate, setSelectedDate] = useState(today.toISOString().split("T")[0]);
   const [memoText, setMemoText] = useState("");
   const [editingMemo, setEditingMemo] = useState(false);
+  const [playingSnoreAudio, setPlayingSnoreAudio] = useState(false);
+  const snoreSoundRef = useRef<Audio.Sound | null>(null);
 
   const daysInMonth = getDaysInMonth(viewYear, viewMonth);
   const firstDay = getFirstDay(viewYear, viewMonth);
   const selectedRecord = getRecordByDate(selectedDate);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
+  useEffect(() => {
+    return () => {
+      void unloadSnoreAudio();
+    };
+  }, []);
+
   function handleSelectDate(dateStr: string) {
+    void unloadSnoreAudio();
     setSelectedDate(dateStr);
     const rec = getRecordByDate(dateStr);
     setMemoText(rec?.memo ?? "");
@@ -55,6 +65,42 @@ export default function RecordsScreen() {
     await updateMemo(selectedRecord.id, memoText);
     setEditingMemo(false);
     Alert.alert("저장", "메모가 저장되었습니다.");
+  }
+
+  async function unloadSnoreAudio() {
+    if (!snoreSoundRef.current) return;
+    const sound = snoreSoundRef.current;
+    snoreSoundRef.current = null;
+    setPlayingSnoreAudio(false);
+    await sound.unloadAsync();
+  }
+
+  async function toggleSnoreAudio() {
+    if (!selectedRecord?.audioPath) {
+      Alert.alert("녹음 없음", "이 기록에는 재생할 코골이 녹음이 없습니다.");
+      return;
+    }
+
+    if (snoreSoundRef.current) {
+      await unloadSnoreAudio();
+      return;
+    }
+
+    try {
+      const { sound } = await Audio.Sound.createAsync({ uri: selectedRecord.audioPath });
+      snoreSoundRef.current = sound;
+      setPlayingSnoreAudio(true);
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if ("isLoaded" in status && status.isLoaded && status.didJustFinish) {
+          void unloadSnoreAudio();
+        }
+      });
+      await sound.playAsync();
+    } catch (error) {
+      console.log("Failed to play snore audio", error);
+      Alert.alert("재생 실패", "코골이 녹음을 재생할 수 없습니다.");
+      await unloadSnoreAudio();
+    }
   }
 
   function scoreColor(s: number) {
@@ -207,6 +253,34 @@ export default function RecordsScreen() {
                 ))}
               </View>
 
+              {selectedRecord.audioPath ? (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.audioButton,
+                    {
+                      backgroundColor: playingSnoreAudio ? "#FFE082" : colors.surface,
+                      borderColor: playingSnoreAudio ? "#FFE082" : colors.border,
+                      opacity: pressed ? 0.75 : 1,
+                    },
+                  ]}
+                  onPress={toggleSnoreAudio}
+                >
+                  <Feather
+                    name={playingSnoreAudio ? "stop-circle" : "radio"}
+                    size={16}
+                    color={playingSnoreAudio ? "#1E203C" : "#F48FB1"}
+                  />
+                  <Text
+                    style={[
+                      styles.audioButtonText,
+                      { color: playingSnoreAudio ? "#1E203C" : colors.text },
+                    ]}
+                  >
+                    {playingSnoreAudio ? "재생 중지" : "코골이 녹음 듣기"}
+                  </Text>
+                </Pressable>
+              ) : null}
+
               {/* 메모 */}
               <View style={[styles.memoBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <View style={styles.memoHeader}>
@@ -299,6 +373,16 @@ const styles = StyleSheet.create({
   detailItem: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 12, padding: 12 },
   detailItemLabel: { fontSize: 11, marginBottom: 2 },
   detailItemValue: { fontSize: 15, fontWeight: "600" },
+  audioButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 12,
+  },
+  audioButtonText: { fontSize: 13, fontWeight: "700" },
   memoBox: { borderRadius: 14, borderWidth: 1, padding: 14, gap: 10 },
   memoHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
   memoTitle: { fontSize: 14, fontWeight: "600", flex: 1 },
