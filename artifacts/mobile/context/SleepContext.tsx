@@ -4,15 +4,22 @@ import { Platform } from "react-native";
 
 import { useAuth } from "@/context/AuthContext";
 import type { SleepRecord } from "@/lib/api";
-import { createSleepInfoApi, getSleepInfoApi } from "@/services/authApi";
+import { createSleepInfoApi, getSensorApi, getSleepInfoApi } from "@/services/authApi";
 
 export type { SleepRecord } from "@/lib/api";
+
+type ActiveSleepSession = {
+  startTime: Date;
+  temperature: number;
+  humidity: number;
+  sensorUpdatedAt?: string;
+};
 
 interface SleepContextType {
   monthlyAverageDuration: number;
   monthlyAverageScore: number;
   records: SleepRecord[];
-  activeSession: { startTime: Date; temperature: number; humidity: number } | null;
+  activeSession: ActiveSleepSession | null;
   startSleep: () => void;
   endSleep: () => Promise<SleepRecord | null>;
   updateMemo: (id: string, memo: string) => Promise<void>;
@@ -32,6 +39,7 @@ const SleepContext = createContext<SleepContextType | null>(null);
 const SNORE_DB_THRESHOLD = -42;
 const SNORE_EVENT_COOLDOWN_MS = 3500;
 const SNORE_ARMING_DELAY_MS = 10000;
+const SENSOR_POLL_INTERVAL_MS = 5000;
 
 function getSleepRecordList(data: any): any[] {
   if (Array.isArray(data)) return data;
@@ -114,6 +122,32 @@ function dedupeSleepRecords(records: SleepRecord[]) {
   return Array.from(byDate.values());
 }
 
+function getSensorList(data: any): any[] {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.value)) return data.value;
+  if (Array.isArray(data?.records)) return data.records;
+  if (Array.isArray(data?.sensors)) return data.sensors;
+  if (data && typeof data === "object") return [data];
+  return [];
+}
+
+function getSensorTime(sensor: any) {
+  const value = sensor?.time_stamp ?? sensor?.timestamp ?? sensor?.created_at ?? sensor?.createdAt;
+  const parsed = value ? new Date(value).getTime() : NaN;
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function pickLatestSensor(data: any) {
+  return getSensorList(data)
+    .filter((sensor) => sensor && typeof sensor === "object")
+    .sort((a, b) => getSensorTime(b) - getSensorTime(a))[0];
+}
+
+function toFiniteNumber(value: any) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
 export function SleepProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [records, setRecords] = useState<SleepRecord[]>([]);
@@ -146,6 +180,17 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     loadRecords(user.id);
   }, [user?.id]);
 
+  useEffect(() => {
+    if (!user?.id || !activeSession) return;
+
+    void refreshSensorSnapshot(user.id);
+    const interval = setInterval(() => {
+      void refreshSensorSnapshot(user.id);
+    }, SENSOR_POLL_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [user?.id, activeSession?.startTime]);
+
   async function loadRecords(userId: string) {
     try {
       const res = await getSleepInfoApi(userId);
@@ -155,6 +200,31 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
       setRecords(dedupeSleepRecords(converted));
     } catch (error) {
       console.log("Failed to load sleep records", error);
+    }
+  }
+
+  async function refreshSensorSnapshot(userId: string) {
+    try {
+      const res = await getSensorApi(userId);
+      const latest = pickLatestSensor(res.data);
+      if (!latest) return;
+
+      const temperature = toFiniteNumber(latest.temp ?? latest.temperature ?? latest.temp_avg);
+      const humidity = toFiniteNumber(latest.hum ?? latest.humidity ?? latest.hum_avg);
+
+      if (temperature === null && humidity === null) return;
+
+      setActiveSession((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          temperature: temperature === null ? current.temperature : Math.round(temperature),
+          humidity: humidity === null ? current.humidity : Math.round(humidity),
+          sensorUpdatedAt: new Date().toISOString(),
+        };
+      });
+    } catch (error) {
+      console.log("Failed to load sensor snapshot", error);
     }
   }
 
@@ -175,6 +245,7 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     });
     recordingRequestedRef.current = true;
     void startSnoreRecording();
+    if (user?.id) void refreshSensorSnapshot(user.id);
   }
 
   async function startSnoreRecording() {
@@ -258,35 +329,50 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function endSleep(): Promise<SleepRecord | null> {
-    if (!activeSession || !user) return null;
+    if (!activeSession) return null;
+
+    const session = activeSession;
 
     try {
       const endTime = new Date();
       const snoreResult = await stopSnoreRecording();
-      const durationMinutes = Math.round((endTime.getTime() - activeSession.startTime.getTime()) / 60000);
-      const date = activeSession.startTime.toISOString().split("T")[0];
+      const durationMinutes = Math.round((endTime.getTime() - session.startTime.getTime()) / 60000);
+      const date = session.startTime.toISOString().split("T")[0];
+      const userId = user?.id ?? "local";
       const score = Math.min(100, Math.max(40, 70 + Math.floor(durationMinutes / 10)));
       const record: SleepRecord = {
-        id: `${user.id}-${date}`,
+        id: `${userId}-${date}`,
         date,
-        startTime: activeSession.startTime.toTimeString().slice(0, 5),
+        startTime: session.startTime.toTimeString().slice(0, 5),
         endTime: endTime.toTimeString().slice(0, 5),
         durationMinutes: Math.max(1, durationMinutes),
         score,
-        temperature: activeSession.temperature,
-        humidity: activeSession.humidity,
+        temperature: session.temperature,
+        humidity: session.humidity,
         snoringCount: snoreResult.snoringCount,
         audioPath: snoreResult.audioPath,
         memo: "",
       };
 
-      await createSleepInfoApi(buildSleepInfoPayload(user.id, record));
-      await loadRecords(user.id);
+      setRecords((current) => dedupeSleepRecords([...current, record]));
+
+      if (user) {
+        try {
+          await createSleepInfoApi(buildSleepInfoPayload(user.id, record));
+          await loadRecords(user.id);
+        } catch (error) {
+          console.log("Failed to sync sleep record", error);
+        }
+      }
+
       setActiveSession(null);
       return record;
     } catch (error) {
       console.log("Failed to create sleep record", error);
       return null;
+    } finally {
+      recordingRequestedRef.current = false;
+      setActiveSession(null);
     }
   }
 

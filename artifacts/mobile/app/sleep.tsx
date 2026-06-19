@@ -81,6 +81,8 @@ export default function SleepScreen() {
   const qualityColor = hours >= 7 ? colors.success : hours >= 5 ? "#FFE082" : colors.destructive;
   const topPad = Platform.OS === "web" ? 67 : insets.top + 10;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom + 16;
+  const sensorConnected = Boolean(activeSession.sensorUpdatedAt);
+  const sensorStatus = sensorConnected ? "백엔드 센서 연결됨" : "센서 데이터 대기 중";
 
   return (
     <LinearGradient colors={["#1A1C38", "#1E203C"]} style={styles.root}>
@@ -150,6 +152,24 @@ export default function SleepScreen() {
               <Text style={[styles.infoValue, { color: colors.text }]}>{value}</Text>
             </View>
           ))}
+        </View>
+
+        <View
+          style={[
+            styles.sensorStrip,
+            {
+              backgroundColor: colors.card,
+              borderColor: sensorConnected ? "#80CBC455" : "#FFE08244",
+            },
+          ]}
+        >
+          <View style={[styles.sensorIcon, { backgroundColor: sensorConnected ? "#80CBC422" : "#FFE08222" }]}>
+            <Feather name={sensorConnected ? "radio" : "alert-circle"} size={16} color={sensorConnected ? "#80CBC4" : "#FFE082"} />
+          </View>
+          <View style={styles.sensorCopy}>
+            <Text style={[styles.sensorTitle, { color: colors.text }]}>실시간 온습도</Text>
+            <Text style={[styles.sensorText, { color: colors.mutedForeground }]}>{sensorStatus}</Text>
+          </View>
         </View>
 
         {/* 수면 종료 버튼 */}
@@ -236,6 +256,18 @@ const styles = StyleSheet.create({
   infoIcon: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
   infoLabel: { fontSize: 11 },
   infoValue: { fontSize: 16, fontWeight: "700" },
+  sensorStrip: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  sensorIcon: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+  sensorCopy: { flex: 1, gap: 2 },
+  sensorTitle: { fontSize: 13, fontWeight: "700" },
+  sensorText: { fontSize: 12 },
   endBtn: { borderRadius: 18, overflow: "hidden", marginTop: 4 },
   endBtnGrad: {
     paddingVertical: 18,

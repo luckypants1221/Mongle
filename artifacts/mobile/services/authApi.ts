@@ -62,6 +62,12 @@ export const getSleepInfoApi = (
 ) =>
   api.get(`/sleepinfo?id=${id}`);
 
+// 실시간 센서 조회
+export const getSensorApi = (
+  id: string
+) =>
+  api.get(`/sensor?id=${id}`);
+
 // 수면 기록 저장
 export const createSleepInfoApi = (
   data: {
