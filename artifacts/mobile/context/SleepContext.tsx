@@ -84,7 +84,7 @@ function buildSleepInfoPayload(userId: string, record: SleepRecord) {
     end_sleep: endSleep.toISOString(),
     temp_avg: Math.round(record.temperature ?? 0),
     hum_avg: Math.round(record.humidity ?? 0),
-    audio_path: record.audioPath ?? "",
+    audio_path: "",
     duration: record.durationMinutes,
     snoring_count: Math.round(record.snoringCount ?? 0),
     memo: record.memo ?? "",
@@ -309,14 +309,13 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
 
     try {
       await recording.stopAndUnloadAsync();
-      const audioPath = recording.getURI() ?? "";
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
       });
 
       return {
-        audioPath: snoreCountRef.current > 0 ? audioPath : "",
+        audioPath: "",
         snoringCount: snoreCountRef.current,
       };
     } catch (error) {

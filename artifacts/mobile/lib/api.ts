@@ -206,7 +206,7 @@ function buildSleepRecordRequest(userId: string, record: Omit<SleepRecord, "id">
     end_sleep: toApiDateTime(record.date, record.endTime),
     temp_avg: Math.round(record.temperature ?? 0),
     hum_avg: Math.round(record.humidity ?? 0),
-    audio_path: record.audioPath ?? "",
+    audio_path: "",
     duration: record.durationMinutes,
     snoring_count: Math.round(record.snoringCount ?? 0),
     memo: record.memo ?? "",

@@ -1,7 +1,6 @@
 import { Feather } from "@/components/Icon";
-import { Audio } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import {
   Alert,
   Platform,
@@ -38,24 +37,13 @@ export default function RecordsScreen() {
   const [selectedDate, setSelectedDate] = useState(today.toISOString().split("T")[0]);
   const [memoText, setMemoText] = useState("");
   const [editingMemo, setEditingMemo] = useState(false);
-  const [playingSnoreClip, setPlayingSnoreClip] = useState<number | null>(null);
-  const snoreSoundRef = useRef<Audio.Sound | null>(null);
 
   const daysInMonth = getDaysInMonth(viewYear, viewMonth);
   const firstDay = getFirstDay(viewYear, viewMonth);
   const selectedRecord = getRecordByDate(selectedDate);
-  const snoreClipCount = Math.max(0, Math.round(selectedRecord?.snoringCount ?? 0));
-  const snoreClipIndexes = Array.from({ length: snoreClipCount }, (_, index) => index + 1);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
-  useEffect(() => {
-    return () => {
-      void unloadSnoreAudio();
-    };
-  }, []);
-
   function handleSelectDate(dateStr: string) {
-    void unloadSnoreAudio();
     setSelectedDate(dateStr);
     const rec = getRecordByDate(dateStr);
     setMemoText(rec?.memo ?? "");
@@ -67,43 +55,6 @@ export default function RecordsScreen() {
     await updateMemo(selectedRecord.id, memoText);
     setEditingMemo(false);
     Alert.alert("저장", "메모가 저장되었습니다.");
-  }
-
-  async function unloadSnoreAudio() {
-    if (!snoreSoundRef.current) return;
-    const sound = snoreSoundRef.current;
-    snoreSoundRef.current = null;
-    setPlayingSnoreClip(null);
-    await sound.unloadAsync();
-  }
-
-  async function toggleSnoreAudio(clipIndex: number) {
-    if (!selectedRecord?.audioPath) {
-      Alert.alert("녹음 없음", "이 기록에는 재생할 코골이 녹음이 없습니다.");
-      return;
-    }
-
-    if (snoreSoundRef.current) {
-      const shouldStopOnly = playingSnoreClip === clipIndex;
-      await unloadSnoreAudio();
-      if (shouldStopOnly) return;
-    }
-
-    try {
-      const { sound } = await Audio.Sound.createAsync({ uri: selectedRecord.audioPath });
-      snoreSoundRef.current = sound;
-      setPlayingSnoreClip(clipIndex);
-      sound.setOnPlaybackStatusUpdate((status: any) => {
-        if ("isLoaded" in status && status.isLoaded && status.didJustFinish) {
-          void unloadSnoreAudio();
-        }
-      });
-      await sound.playAsync();
-    } catch (error) {
-      console.log("Failed to play snore audio", error);
-      Alert.alert("재생 실패", "코골이 녹음을 재생할 수 없습니다.");
-      await unloadSnoreAudio();
-    }
   }
 
   function scoreColor(s: number) {
@@ -256,63 +207,6 @@ export default function RecordsScreen() {
                 ))}
               </View>
 
-              {snoreClipCount > 0 ? (
-                <View style={[styles.snorePanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  <View style={styles.snorePanelHeader}>
-                    <View style={[styles.snorePanelIcon, { backgroundColor: "#F48FB122" }]}>
-                      <Feather name="volume-x" size={15} color="#F48FB1" />
-                    </View>
-                    <Text style={[styles.snorePanelTitle, { color: colors.text }]}>코골이 음원</Text>
-                    <Text style={[styles.snorePanelCount, { color: colors.mutedForeground }]}>
-                      {snoreClipCount}개
-                    </Text>
-                  </View>
-                  <View style={styles.snoreClipList}>
-                    {snoreClipIndexes.map((clipIndex) => {
-                      const isPlaying = playingSnoreClip === clipIndex;
-                      const canPlay = Boolean(selectedRecord.audioPath);
-
-                      return (
-                        <Pressable
-                          key={clipIndex}
-                          disabled={!canPlay}
-                          style={({ pressed }) => [
-                            styles.snoreClipButton,
-                            {
-                              backgroundColor: isPlaying ? "#FFE082" : colors.card,
-                              borderColor: isPlaying ? "#FFE082" : colors.border,
-                              opacity: !canPlay ? 0.45 : pressed ? 0.75 : 1,
-                            },
-                          ]}
-                          onPress={() => toggleSnoreAudio(clipIndex)}
-                        >
-                          <View style={styles.snoreClipLeft}>
-                            <View
-                              style={[
-                                styles.snoreClipIcon,
-                                { backgroundColor: isPlaying ? "#1E203C18" : "#F48FB118" },
-                              ]}
-                            >
-                              <Feather
-                                name={isPlaying ? "stop-circle" : "radio"}
-                                size={14}
-                                color={isPlaying ? "#1E203C" : "#F48FB1"}
-                              />
-                            </View>
-                            <Text style={[styles.snoreClipTitle, { color: isPlaying ? "#1E203C" : colors.text }]}>
-                              코골이 {clipIndex}회차
-                            </Text>
-                          </View>
-                          <Text style={[styles.snoreClipAction, { color: isPlaying ? "#1E203C" : "#BBDDFF" }]}>
-                            {isPlaying ? "정지" : "듣기"}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-              ) : null}
-
               {/* 메모 */}
               <View style={[styles.memoBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <View style={styles.memoHeader}>
@@ -405,63 +299,6 @@ const styles = StyleSheet.create({
   detailItem: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 12, padding: 12 },
   detailItemLabel: { fontSize: 11, marginBottom: 2 },
   detailItemValue: { fontSize: 15, fontWeight: "600" },
-  snorePanel: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 12,
-    gap: 10,
-  },
-  snorePanelHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  snorePanelIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  snorePanelTitle: { fontSize: 14, fontWeight: "700", flex: 1 },
-  snorePanelCount: { fontSize: 12, fontWeight: "700" },
-  snoreClipList: { gap: 8 },
-  snoreClipButton: {
-    minHeight: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  snoreClipLeft: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  snoreClipIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  snoreClipTitle: { fontSize: 13, fontWeight: "700" },
-  snoreClipAction: { fontSize: 12, fontWeight: "800" },
-  audioButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: 12,
-  },
-  audioButtonText: { fontSize: 13, fontWeight: "700" },
   memoBox: { borderRadius: 14, borderWidth: 1, padding: 14, gap: 10 },
   memoHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
   memoTitle: { fontSize: 14, fontWeight: "600", flex: 1 },
