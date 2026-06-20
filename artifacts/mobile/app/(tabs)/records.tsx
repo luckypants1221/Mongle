@@ -1,6 +1,6 @@
 import { Feather } from "@/components/Icon";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Alert,
   Platform,
@@ -42,6 +42,12 @@ export default function RecordsScreen() {
   const firstDay = getFirstDay(viewYear, viewMonth);
   const selectedRecord = getRecordByDate(selectedDate);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+
+  useEffect(() => {
+    if (!editingMemo) {
+      setMemoText(selectedRecord?.memo ?? "");
+    }
+  }, [selectedDate, selectedRecord?.memo, editingMemo]);
 
   function handleSelectDate(dateStr: string) {
     setSelectedDate(dateStr);

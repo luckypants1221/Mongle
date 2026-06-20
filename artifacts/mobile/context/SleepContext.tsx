@@ -97,7 +97,7 @@ function normalizeSleepRecord(item: any, userId: string, index: number): SleepRe
   const date = toDateString(item.day ?? item.date ?? startSleep);
 
   return {
-    id: String(item.sleep_id ?? item.record_id ?? item.id ?? `${userId}-${date}-${index}`),
+    id: String(item.sleep_id ?? item.record_id ?? `${userId}-${date}-${index}`),
     date,
     durationMinutes: Math.round(Number(item.duration ?? item.durationMinutes ?? item.duration_minutes ?? 0)),
     score: Number(item.sleep_score ?? item.score ?? 0),

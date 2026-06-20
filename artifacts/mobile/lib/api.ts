@@ -55,6 +55,7 @@ interface AuthResponse {
 interface SleepRecordResponse {
   id?: string | number;
   sleep_id?: string | number;
+  record_id?: string | number;
   day?: string;
   date?: string;
   sleep_score?: number;
@@ -164,7 +165,7 @@ function normalizeSleepRecords(data: unknown): SleepRecord[] {
     const date = toDate(record.day ?? record.date ?? start);
 
     return {
-      id: String(record.sleep_id ?? record.id ?? `${date}-${index}`),
+      id: String(record.sleep_id ?? record.record_id ?? `${date}-${index}`),
       date,
       startTime: toTime(start),
       endTime: toTime(end),
