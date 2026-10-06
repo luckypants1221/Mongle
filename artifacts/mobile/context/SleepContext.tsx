@@ -62,31 +62,39 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   const [alarmMin, setAlarmMin] = useState(0);
   const [alarmOn, setAlarmOnState] = useState(true);
 
-  useEffect(() => { loadRecords(); loadAlarm(); }, []);
+  // useEffect(() => { loadRecords(); loadAlarm(); }, []);
+
+
 
   async function loadRecords() {
     try {
-      const stored = await AsyncStorage.getItem("@sleep_records");
+      const storedUser = await AsyncStorage.getItem("@sleep_user");
+
+      if (!storedUser) {
+        return;
+      }
+
+      const user = JSON.parse(storedUser);
+      const userId = user.id;
+
+
+
+      const stored = await AsyncStorage.getItem(`@sleep_user_${userId}`);
+      console.log("SleepContext.tsx - stored: ", stored);
       if (stored) {
         setRecords(JSON.parse(stored));
       } else {
         const sample = genSampleRecords();
         setRecords(sample);
-        await AsyncStorage.setItem("@sleep_records", JSON.stringify(sample));
-      }
-    } catch {}
-  }
 
-  async function loadAlarm() {
-    try {
-      const stored = await AsyncStorage.getItem("@alarm_settings");
-      if (stored) {
-        const a = JSON.parse(stored);
-        if (typeof a.hour === "number") setAlarmHour(a.hour);
-        if (typeof a.min === "number") setAlarmMin(a.min);
-        if (typeof a.on === "boolean") setAlarmOnState(a.on);
+        await AsyncStorage.setItem(
+          `@sleep_records_${userId}`,
+          JSON.stringify(sample)
+        );
       }
-    } catch {}
+    } catch (error) {
+      console.error("수면 기록 불러오기 실패:", error);
+    }
   }
 
   async function setAlarm(hour: number, min: number) {

@@ -12,7 +12,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (id: string, pwd: string) => Promise<boolean>;
+  login: (name: string, id: string, pwd: string) => Promise<boolean>;
   register: (data: { name: string; email: string; pwd: string }) => Promise<boolean>;
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => Promise<void>;
@@ -42,11 +42,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function login(
+    name: string,
     email: string,
     pwd: string
   ): Promise<boolean> {
     try {
-      const res = await loginApi(email, pwd);
+      const res = await loginApi(name, email, pwd);
+      console.log("로그인 응답 전체:", res);
+      console.log("로그인 응답 데이터:", res.data);
+      console.log("로그인 응답 message:", res.data.message);
 
       if (
         res.data.message !==
@@ -65,7 +69,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(user);
 
       return true;
-    } catch {
+    } catch (error: any) {
+      console.log("로그인 API 에러:", error);
+      console.log(
+        "에러 상세:",
+        JSON.stringify(error.response?.data, null, 2)
+      );
+      console.log("에러 상태:", error.response?.status);
+
       return false;
     }
   }

@@ -1,15 +1,16 @@
 import axios from "axios";
 
 
-const api = axios.create({
+export const api = axios.create({
   baseURL: "http://13.125.10.228/",
 });
 
 //로그안
 export const loginApi = (
+  name: string,
   email: string,
   pwd: string
-) => api.post("/login", { email, pwd });
+) => api.post("/login", { name, email, pwd });
 //회원가입
 export const signupApi = (
   name: string,

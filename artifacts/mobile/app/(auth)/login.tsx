@@ -19,6 +19,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { api } from "../../services/authApi";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function LoginScreen() {
   const colors = useColors();
@@ -29,21 +31,53 @@ export default function LoginScreen() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  async function handleLogin() {
+  const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert("알림", "이메일과 비밀번호를 입력해주세요.");
       return;
     }
     setLoading(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const ok = await login(email, password);
-    setLoading(false);
-    if (!ok) {
-      Alert.alert("로그인 실패", "이메일 또는 비밀번호가 올바르지 않습니다.");
-    } else {
+    //   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    //   const ok = await login(name, email, password);
+    //   setLoading(false);
+    //   if (!ok) {
+    //     Alert.alert("로그인 실패", "이메일 또는 비밀번호가 올바르지 않습니다.");
+    //     console.log("로그인 실패",);
+    //   } else {
+    //     router.replace("/(tabs)");
+    //   }
+
+
+    try {
+      const response = await api.post("/login", {
+        name: "",
+        email: email,
+        pwd: password,
+      });
+      const user = {
+        id: response.data.user_id,
+        name: response.data.user_name,
+        email: email,
+      };
+      console.log("로그인 응답:", response.data);
+      console.log("name:", response.data.user_name);
+      await AsyncStorage.setItem(
+        "@sleep_user",
+        JSON.stringify(user)
+      );
+      // console.log("AsyncStorage:", AsyncStorage.getItem("@sleep_user"))
+      const storedUser = await AsyncStorage.getItem("@sleep_user");
+      console.log("저장된 사용자:", storedUser);
       router.replace("/(tabs)");
+
+
+
+
+    } catch (error) {
+      console.error("로그인 실패:", error);
     }
   }
+
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>

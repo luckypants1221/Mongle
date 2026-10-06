@@ -2,7 +2,7 @@ import { Feather } from "@/components/Icon";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Image,
   Platform,
@@ -18,6 +18,7 @@ import { useColors } from "@/hooks/useColors";
 import { useTabBarHeight } from "@/hooks/useTabBarHeight";
 import { RemGraph } from "@/components/RemGraph";
 import { EnvModal, EnvType } from "@/components/EnvModal";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const DAYS_KR = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -58,12 +59,40 @@ export default function HomeScreen() {
   const lastRecord = weeklyRecords[weeklyRecords.length - 1];
   const weekDates = getWeekDates();
   const topPad = Platform.OS === "web" ? 56 : insets.top;
+  const [userName, setUserName] = useState("");
+  const [userId, setUserId] = useState("");
+  useEffect(() => {
+    const getStoredUser = async () => {
+      const stored = await AsyncStorage.getItem("@sleep_user");
 
+      if (stored) {
+        const user = JSON.parse(stored);
+
+        setUserName(user.name);
+        setUserId(user.id);
+
+        console.log("userId:", user.id);
+        console.log("userName:", user.name);
+      }
+      // const stored2 = await AsyncStorage.getItem(`@sleep_user_${userId}`);
+      // console.log("userName: ", stored2);
+
+
+      //  const user = JSON.parse(storedUser);
+      //       const userId = user.id;
+
+      //       const stored = await AsyncStorage.getItem(`@sleep_user_${userId}`);
+
+
+    };
+
+    getStoredUser();
+  }, []);
   const scoreColor =
     !lastRecord ? colors.mutedForeground
-    : lastRecord.score >= 80 ? "#4CAF50"
-    : lastRecord.score >= 60 ? "#FFE082"
-    : "#EF5350";
+      : lastRecord.score >= 80 ? "#4CAF50"
+        : lastRecord.score >= 60 ? "#FFE082"
+          : "#EF5350";
 
   function handleStartSleep() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -93,7 +122,7 @@ export default function HomeScreen() {
             <Image source={require("@/assets/images/logo_nobg.png")} style={styles.headerLogo} resizeMode="contain" />
             <View>
               <Text style={styles.greetSmall}>안녕하세요,</Text>
-              <Text style={styles.greetName}>{user?.name ?? "사용자"}님</Text>
+              <Text style={styles.greetName}>{userName ?? "사용자"}님</Text>
             </View>
           </View>
           <View style={[styles.scoreBadge, { backgroundColor: colors.surface }]}>
@@ -118,8 +147,8 @@ export default function HomeScreen() {
                   isToday
                     ? { backgroundColor: "#BBDDFF" }
                     : rec
-                    ? { backgroundColor: "rgba(187,221,255,0.12)", borderColor: "#BBDDFF50", borderWidth: 1 }
-                    : { borderColor: "#353860", borderWidth: 1 },
+                      ? { backgroundColor: "rgba(187,221,255,0.12)", borderColor: "#BBDDFF50", borderWidth: 1 }
+                      : { borderColor: "#353860", borderWidth: 1 },
                 ]}>
                   <Text style={[styles.dayNum, { color: isToday ? "#1E203C" : rec ? "#BBDDFF" : "#7A8AA6" }]}>
                     {d.getDate()}
