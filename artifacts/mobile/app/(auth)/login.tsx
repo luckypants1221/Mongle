@@ -28,9 +28,13 @@ export default function LoginScreen() {
   const [pwd, setPwd] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   async function handleLogin() {
+    if (loading) return;
+    setLoginError(null);
     if (!email || !pwd) {
+      setLoginError("이메일과 비밀번호를 입력해주세요.");
       Alert.alert("알림", "이메일과 비밀번호를 입력해주세요.");
       return;
     }
@@ -39,7 +43,8 @@ export default function LoginScreen() {
     const ok = await login(email, pwd);
     setLoading(false);
     if (!ok) {
-      Alert.alert("로그인 실패", "이메일 또는 비밀번호가 올바르지 않습니다.");
+      setLoginError("로그인하지 못했어요. 서버 연결과 계정 정보를 확인해주세요.");
+      Alert.alert("로그인 실패", "서버 연결과 이메일·비밀번호를 확인해주세요.");
     } else {
       router.replace("/(tabs)");
     }
@@ -128,6 +133,8 @@ export default function LoginScreen() {
               <Text style={styles.loginBtnText}>{loading ? "로그인 중..." : "로그인"}</Text>
             </LinearGradient>
           </Pressable>
+
+          {loginError && <Text style={{ color: colors.destructive, fontSize: 12, lineHeight: 18 }} accessibilityLiveRegion="polite">{loginError}</Text>}
 
           {/* 회원가입 */}
           <Pressable

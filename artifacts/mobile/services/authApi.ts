@@ -2,7 +2,8 @@ import axios from "axios";
 
 
 const api = axios.create({
-  baseURL: "http://13.125.10.228/",
+  baseURL: process.env.EXPO_PUBLIC_API_BASE_URL || "http://13.125.10.228/",
+  timeout: 8000,
 });
 
 //로그안

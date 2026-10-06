@@ -12,13 +12,11 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 
-export type EnvType = "music" | "humidity" | "lighting" | null;
+export type EnvType = "humidity" | "lighting" | null;
 
 interface EnvState {
-  music: string;
   humidity: number;
   lighting: string;
-  setMusic: (v: string) => void;
   setHumidity: (v: number) => void;
   setLighting: (v: string) => void;
 }
@@ -28,13 +26,6 @@ interface Props {
   onClose: () => void;
   env: EnvState;
 }
-
-const MUSIC_LIST = [
-  { id: "none", icon: "volume-x" as const, label: "없음", desc: "조용한 수면" },
-  { id: "nature", icon: "wind" as const, label: "자연음", desc: "숲속 바람 소리" },
-  { id: "rain", icon: "cloud-rain" as const, label: "빗소리", desc: "잔잔한 빗소리" },
-  { id: "white", icon: "radio" as const, label: "백색소음", desc: "집중 수면 유도" },
-];
 
 const LIGHTING_LIST = [
   { id: "off", label: "끄기", icon: "moon" as const, desc: "완전 암실" },
@@ -49,14 +40,12 @@ export function EnvModal({ visible, onClose, env }: Props) {
   const isOpen = visible !== null;
 
   function title() {
-    if (visible === "music") return "수면 음악";
     if (visible === "humidity") return "습도 설정";
     if (visible === "lighting") return "조명 설정";
     return "";
   }
 
   function icon(): React.ComponentProps<typeof Feather>["name"] {
-    if (visible === "music") return "music";
     if (visible === "humidity") return "droplet";
     return "sun";
   }
@@ -78,37 +67,6 @@ export function EnvModal({ visible, onClose, env }: Props) {
             <Feather name="x" size={18} color={colors.mutedForeground} />
           </Pressable>
         </View>
-
-        {/* 음악 선택 */}
-        {visible === "music" && (
-          <View style={styles.body}>
-            {MUSIC_LIST.map(({ id, icon: ic, label, desc }) => {
-              const active = env.music === id;
-              return (
-                <Pressable
-                  key={id}
-                  style={[
-                    styles.optionRow,
-                    { backgroundColor: active ? "#BBDDFF12" : colors.surface, borderColor: active ? "#BBDDFF" : colors.border },
-                  ]}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    env.setMusic(id);
-                  }}
-                >
-                  <View style={[styles.optionIcon, { backgroundColor: active ? "#BBDDFF20" : colors.card }]}>
-                    <Feather name={ic} size={20} color={active ? "#BBDDFF" : colors.mutedForeground} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.optionLabel, { color: active ? "#BBDDFF" : colors.text }]}>{label}</Text>
-                    <Text style={[styles.optionDesc, { color: colors.mutedForeground }]}>{desc}</Text>
-                  </View>
-                  {active && <Feather name="check-circle" size={20} color="#BBDDFF" />}
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
 
         {/* 습도 조절 */}
         {visible === "humidity" && (

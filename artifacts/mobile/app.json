@@ -15,7 +15,10 @@
     },
     "ios": {
       "supportsTablet": false,
-      "backgroundColor": "#1E203C"
+      "backgroundColor": "#1E203C",
+      "infoPlist": {
+        "UIBackgroundModes": ["audio"]
+      }
     },
     "android": {
       "backgroundColor": "#1E203C",
@@ -43,6 +46,7 @@
       ]
     ],
     "experiments": {
+      "autolinkingModuleResolution": true,
       "typedRoutes": true,
       "reactCompiler": true
     }

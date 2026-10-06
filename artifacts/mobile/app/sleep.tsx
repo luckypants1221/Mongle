@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSleep } from "@/context/SleepContext";
 import { useColors } from "@/hooks/useColors";
+import { SleepMusicCard } from "@/components/SleepMusicCard";
 
 
 function pad2(n: number) { return String(n).padStart(2, "0"); }
@@ -121,6 +122,8 @@ export default function SleepScreen() {
         </View>
 
         {/* 수면 진행 바 */}
+        <SleepMusicCard disabled={ending} />
+
         <View style={[styles.progressCard, { backgroundColor: colors.card }]}>
           <View style={styles.progressHeader}>
             <Text style={[styles.progressLabel, { color: colors.mutedForeground }]}>목표 수면 진행률</Text>

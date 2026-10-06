@@ -12,6 +12,7 @@
   },
   "private": true,
   "devDependencies": {
+    "@babel/traverse": "7.29.0",
     "typescript": "~5.9.2",
     "prettier": "^3.8.1"
   },

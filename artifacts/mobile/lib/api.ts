@@ -14,6 +14,7 @@ export interface SleepRecord {
   endTime: string;
   durationMinutes: number;
   score: number;
+  scoreAvailable?: boolean;
   temperature?: number;
   humidity?: number;
   snoringCount?: number;

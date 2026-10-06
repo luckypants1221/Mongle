@@ -7,6 +7,7 @@ import {
   Image,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -18,6 +19,8 @@ import { useColors } from "@/hooks/useColors";
 import { useTabBarHeight } from "@/hooks/useTabBarHeight";
 import { RemGraph } from "@/components/RemGraph";
 import { EnvModal, EnvType } from "@/components/EnvModal";
+import { SnorePredictionTile } from "@/components/SnorePredictionTile";
+import { localDateKey, previousDateKey } from "@/lib/snorePrediction";
 
 const DAYS_KR = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -36,7 +39,6 @@ function getWeekDates() {
 }
 
 const ENV_BTNS: { key: EnvType; icon: React.ComponentProps<typeof Feather>["name"]; label: string }[] = [
-  { key: "music", icon: "music", label: "음악" },
   { key: "humidity", icon: "droplet", label: "습도" },
   { key: "lighting", icon: "sun", label: "조명" },
 ];
@@ -46,15 +48,14 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useTabBarHeight();
   const { user } = useAuth();
-  const { weeklyRecords, getRecordByDate, activeSession, startSleep, monthlyAverageDuration, monthlyAverageScore } = useSleep();
+  const { weeklyRecords, getRecordByDate, activeSession, startSleep, currentDate: todayStr } = useSleep();
 
   const [envOpen, setEnvOpen] = useState<EnvType>(null);
-  const [music, setMusic] = useState("none");
   const [humidity, setHumidity] = useState(55);
   const [lighting, setLighting] = useState("off");
 
-  const today = new Date();
-  const todayStr = today.toISOString().split("T")[0];
+  const yesterdayStr = previousDateKey(new Date(`${todayStr}T12:00:00`));
+  const previousRecord = getRecordByDate(yesterdayStr);
   const weekDates = getWeekDates();
   const topPad = Platform.OS === "web" ? 56 : insets.top;
   const [selectedDate, setSelectedDate] = useState(todayStr);
@@ -78,10 +79,6 @@ export default function HomeScreen() {
   }
 
   function envLabel(key: EnvType) {
-    if (key === "music") {
-      const m: Record<string, string> = { none: "없음", nature: "자연음", rain: "빗소리", white: "백색소음" };
-      return m[music] ?? music;
-    }
     if (key === "humidity") return `${humidity}%`;
     if (key === "lighting") {
       const l: Record<string, string> = { off: "끄기", low: "낮음", mid: "중간", high: "높음" };
@@ -111,7 +108,7 @@ export default function HomeScreen() {
         {/* 주간 달력 */}
         <View style={styles.weekRow}>
           {weekDates.map((d, i) => {
-            const str = d.toISOString().split("T")[0];
+            const str = localDateKey(d);
             const rec = getRecordByDate(str);
             const isToday = str === todayStr;
             const isSelected = str === selectedDate;
@@ -178,7 +175,7 @@ export default function HomeScreen() {
       </LinearGradient>
 
       {/* ── 바디 — flex로 남은 공간 채움 ── */}
-      <View style={[styles.body, { paddingBottom: tabBarHeight + 8 }]}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.body, { paddingBottom: tabBarHeight + 90 }]} showsVerticalScrollIndicator={false}>
 
         {/* 지난 수면 요약 */}
         <View style={[styles.card, { backgroundColor: colors.card }]}>
@@ -212,9 +209,11 @@ export default function HomeScreen() {
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <View style={styles.cardTitleRow}>
             <Feather name="sliders" size={13} color="#BBDDFF" />
-            <Text style={[styles.cardTitle, { color: colors.text }]}>수면 환경</Text>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>오늘의 수면 준비</Text>
           </View>
           <View style={styles.envRow}>
+            <SnorePredictionTile key={`${user?.id ?? "guest"}:${todayStr}`} previousDate={yesterdayStr}
+              previousScore={previousRecord?.scoreAvailable === false ? undefined : previousRecord?.score} />
             {ENV_BTNS.map(({ key, icon, label }) => (
               <Pressable
                 key={key}
@@ -238,7 +237,7 @@ export default function HomeScreen() {
         </View>
 
         {/* 렘수면 선 그래프 */}
-        <View style={[styles.card, { backgroundColor: colors.card, flex: 1 }]}>
+        <View style={[styles.card, { backgroundColor: colors.card, minHeight: 130 }]}>
           <View style={styles.cardTitleRow}>
             <Feather name="activity" size={13} color="#7C6AFA" />
             <Text style={[styles.cardTitle, { color: colors.text }]}>렘수면 분석</Text>
@@ -254,7 +253,7 @@ export default function HomeScreen() {
             </View>
           )}
         </View>
-      </View>
+      </ScrollView>
 
       {/* ── 수면 시작 버튼 (고정) ── */}
       <View style={[styles.startWrap, { bottom: tabBarHeight, backgroundColor: colors.background }]}>
@@ -286,8 +285,8 @@ export default function HomeScreen() {
         visible={envOpen}
         onClose={() => setEnvOpen(null)}
         env={{
-          music, humidity, lighting,
-          setMusic, setHumidity, setLighting,
+          humidity, lighting,
+          setHumidity, setLighting,
         }}
       />
     </View>
@@ -317,7 +316,7 @@ const styles = StyleSheet.create({
   scoreDot: { width: 4, height: 4, borderRadius: 2 },
 
   /* 바디 */
-  body: { flex: 1, paddingHorizontal: 14, paddingTop: 10, gap: 10 },
+  body: { flexGrow: 1, paddingHorizontal: 14, paddingTop: 10, gap: 10 },
 
   /* 공통 카드 */
   card: { borderRadius: 18, padding: 13, gap: 10 },

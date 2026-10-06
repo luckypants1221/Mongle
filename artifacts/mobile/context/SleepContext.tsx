@@ -3,6 +3,9 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { Platform } from "react-native";
 
 import { useAuth } from "@/context/AuthContext";
+import { useSleepMusic } from "@/hooks/useSleepMusic";
+import type { MusicState, MusicTrack } from "@/lib/sleepMusicPlayer";
+import { localDateKey, parseSleepScore, type SnoreAnswers } from "@/lib/snorePrediction";
 import type { SleepRecord } from "@/lib/api";
 import { createSleepInfoApi, getSensorApi, getSleepInfoApi } from "@/services/authApi";
 
@@ -32,6 +35,13 @@ interface SleepContextType {
   alarmOn: boolean;
   setAlarm: (hour: number, min: number) => Promise<void>;
   setAlarmOn: (on: boolean) => Promise<void>;
+  music: MusicState;
+  selectMusic: (track: MusicTrack) => Promise<void>;
+  toggleMusic: () => Promise<void>;
+  setMusicVolume: (volume: number) => Promise<void>;
+  currentDate: string;
+  snoreAnswers: SnoreAnswers | null;
+  saveSnoreAnswers: (answers: SnoreAnswers) => void;
 }
 
 const SleepContext = createContext<SleepContextType | null>(null);
@@ -51,8 +61,9 @@ function getSleepRecordList(data: any): any[] {
 
 function toDateString(value?: string) {
   if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().split("T")[0];
+  if (!Number.isNaN(parsed.getTime())) return localDateKey(parsed);
   return value.split("T")[0];
 }
 
@@ -95,12 +106,14 @@ function normalizeSleepRecord(item: any, userId: string, index: number): SleepRe
   const startSleep = item.start_sleep ?? item.startTime ?? item.start_time;
   const endSleep = item.end_sleep ?? item.endTime ?? item.end_time;
   const date = toDateString(item.day ?? item.date ?? startSleep);
+  const score = parseSleepScore(item.sleep_score ?? item.score);
 
   return {
     id: String(item.sleep_id ?? item.record_id ?? `${userId}-${date}-${index}`),
     date,
     durationMinutes: Math.round(Number(item.duration ?? item.durationMinutes ?? item.duration_minutes ?? 0)),
-    score: Number(item.sleep_score ?? item.score ?? 0),
+    score: score ?? 0,
+    scoreAvailable: score !== null,
     startTime: toTimeString(startSleep),
     endTime: toTimeString(endSleep),
     temperature: item.temp_avg ?? item.temperature,
@@ -155,11 +168,29 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   const [alarmHour, setAlarmHour] = useState(7);
   const [alarmMin, setAlarmMin] = useState(0);
   const [alarmOn, setAlarmOnState] = useState(true);
+  const [currentDate, setCurrentDate] = useState(() => localDateKey(new Date()));
+  const [survey, setSurvey] = useState<{ userId?: string; date: string; answers: SnoreAnswers } | null>(null);
+  const snoreAnswers = survey?.userId === user?.id && survey?.date === currentDate ? survey.answers : null;
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentDate(localDateKey(new Date())), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  function saveSnoreAnswers(answers: SnoreAnswers) {
+    setSurvey({ userId: user?.id, date: localDateKey(new Date()), answers: { ...answers } });
+  }
   const snoreRecordingRef = useRef<Audio.Recording | null>(null);
   const snoreCountRef = useRef(0);
   const lastSnoreAtRef = useRef(0);
   const recordingStartedAtRef = useRef(0);
   const recordingRequestedRef = useRef(false);
+  const { music, selectMusic, toggleMusic, setMusicVolume, stopMusic } = useSleepMusic(Boolean(activeSession), user?.id);
+  const musicAudibleRef = useRef(false);
+  const musicLastActiveAtRef = useRef(0);
+  const musicAudible = music.playing || (music.loading && music.track !== "none");
+  if (musicAudible || musicAudibleRef.current) musicLastActiveAtRef.current = Date.now();
+  musicAudibleRef.current = musicAudible;
 
   useEffect(() => {
     return () => {
@@ -169,6 +200,7 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!user) {
+      void stopSnoreRecording();
       setRecords([]);
       setActiveSession(null);
       setAlarmHour(7);
@@ -262,6 +294,8 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
+        playThroughEarpieceAndroid: false,
+        staysActiveInBackground: true,
       });
 
       if (!recordingRequestedRef.current) return;
@@ -275,6 +309,11 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
         1000
       );
 
+      if (!recordingRequestedRef.current) {
+        await recording.stopAndUnloadAsync();
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+        return;
+      }
       snoreRecordingRef.current = recording;
     } catch (error) {
       console.log("Failed to start snore recording", error);
@@ -283,6 +322,9 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
 
   function handleRecordingStatus(status: any) {
     if (!status?.isRecording || typeof status.metering !== "number") return;
+    // The microphone also hears our speaker. Resume after a short cooldown so
+    // the ambient loop (or its tail) cannot inflate snoring counts.
+    if (musicAudibleRef.current || Date.now() - musicLastActiveAtRef.current < SNORE_EVENT_COOLDOWN_MS) return;
 
     const now = Date.now();
     const isArmed = now - recordingStartedAtRef.current >= SNORE_ARMING_DELAY_MS;
@@ -334,9 +376,10 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const endTime = new Date();
+      await stopMusic();
       const snoreResult = await stopSnoreRecording();
       const durationMinutes = Math.round((endTime.getTime() - session.startTime.getTime()) / 60000);
-      const date = session.startTime.toISOString().split("T")[0];
+      const date = localDateKey(session.startTime);
       const userId = user?.id ?? "local";
       const score = Math.min(100, Math.max(40, 70 + Math.floor(durationMinutes / 10)));
       const record: SleepRecord = {
@@ -439,6 +482,13 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
         alarmOn,
         setAlarm,
         setAlarmOn,
+        music,
+        selectMusic,
+        toggleMusic,
+        setMusicVolume,
+        currentDate,
+        snoreAnswers,
+        saveSnoreAnswers,
       }}
     >
       {children}
