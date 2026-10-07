@@ -1,5 +1,6 @@
 import { identityId, identityRow, normalizeUser, parseAccountRecords, requireAccountId } from "./accountData";
 import { apiAccountVersion, loginApi, loginProfileApi, setApiAccount, signupApi, changePasswordApi, profileApi, updateProfileApi, getSleepInfoApi, createSleepInfoApi, updateSleepInfoApi } from "../services/authApi";
+import { buildSleepPayload, sameSleepMeasurement } from "./sleepRecording";
 export interface User {
   id: string;
   name: string;
@@ -13,6 +14,8 @@ export interface SleepRecord {
   date: string;
   startTime: string;
   endTime: string;
+  startAt?: string;
+  endAt?: string;
   durationMinutes: number;
   score: number;
   scoreAvailable?: boolean;
@@ -22,7 +25,10 @@ export interface SleepRecord {
   audioPath?: string;
   memo?: string;
   createdAt?: string;
+  ratings?: SleepRatings;
 }
+
+export type SleepRatings = { total: number; humidity: number; temperature: number };
 
 export type SleepStageSegment = { stage: "awake" | "light" | "rem" | "deep"; durationMinutes: number };
 
@@ -69,23 +75,17 @@ export const api = {
   async getSleepRecords(userId: string) { return parseAccountRecords((await getSleepInfoApi(userId)).data, userId).records; },
   async createSleepRecord(userId: string, record: Omit<SleepRecord, "id">) {
     const id = requireAccountId(userId);
-    await createSleepInfoApi(recordPayload(id, record));
-    return (await this.getSleepRecords(id)).find(item => item.date === record.date) ?? null;
+    await createSleepInfoApi(buildSleepPayload(id, record));
+    return (await this.getSleepRecords(id)).find(item => sameSleepMeasurement(item, { ...record, id: "pending" })) ?? null;
   },
   async updateSleepRecord(userId: string, recordId: string, data: Partial<SleepRecord>) {
     const current = (await this.getSleepRecords(userId)).find(item => item.id === recordId);
     if (!current) throw new Error("현재 계정의 기록이 없습니다.");
-    await updateSleepInfoApi(recordPayload(userId, { ...current, ...data, userId: requireAccountId(userId) }));
-    return (await this.getSleepRecords(userId)).find(item => item.id === recordId) ?? null;
+    const updated = { ...current, ...data, userId: requireAccountId(userId) };
+    await updateSleepInfoApi(buildSleepPayload(userId, updated));
+    return (await this.getSleepRecords(userId)).find(item => sameSleepMeasurement(item, updated)) ?? null;
   },
   // Alarm preferences have no server endpoint; they are local settings.
   async getAlarm(_userId: string) { return { hour: 7, min: 0, on: true }; },
   async updateAlarm(_userId: string, data: AlarmSettings) { return data; },
 };
-function recordPayload(userId: string, record: Omit<SleepRecord, "id">) {
-  if (record.userId !== requireAccountId(userId) || record.scoreAvailable === false || record.temperature === undefined || record.humidity === undefined || record.snoringCount === undefined) throw new Error("계정 또는 실제 기록값이 없습니다.");
-  const start = new Date(`${record.date}T${record.startTime}:00`);
-  const end = new Date(`${record.date}T${record.endTime}:00`);
-  if (end < start) end.setDate(end.getDate() + 1);
-  return { id: Number(userId), sleep_score: record.score, start_sleep: start.toISOString(), end_sleep: end.toISOString(), temp_avg: Math.round(record.temperature), hum_avg: Math.round(record.humidity), duration: record.durationMinutes, snoring_count: record.snoringCount, audio_path: record.audioPath ?? "", memo: record.memo ?? "" };
-}

@@ -18,6 +18,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useSleep } from "@/context/SleepContext";
+import { formatSleepDuration } from "@/lib/sleepRecording";
 import { useColors } from "@/hooks/useColors";
 import { useTabBarHeight } from "@/hooks/useTabBarHeight";
 import { TextInput } from "react-native-gesture-handler";
@@ -426,7 +427,7 @@ export default function ProfileScreen() {
                 label: "한 달 평균 수면",
                 value:
                   monthlyAverageDuration > 0
-                    ? `${Math.floor(monthlyAverageDuration / 60)}h ${monthlyAverageDuration % 60}m`
+                    ? formatSleepDuration(monthlyAverageDuration, true)
                     : "-",
                 icon: "moon" as const,
                 color: "#FFE082",

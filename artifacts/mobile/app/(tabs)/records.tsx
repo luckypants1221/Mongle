@@ -17,20 +17,20 @@ import { useColors } from "@/hooks/useColors";
 import { useTabBarHeight } from "@/hooks/useTabBarHeight";
 import { AccountDataNotice } from "@/components/AccountDataNotice";
 import { localDateKey } from "@/lib/snorePrediction";
+import { useLocalSearchParams } from "expo-router";
+import { useAuth } from "@/context/AuthContext";
+import { formatSleepDuration as fmtDuration } from "@/lib/sleepRecording";
 
 const DAYS_KR = ["일", "월", "화", "수", "목", "금", "토"];
 
 function getDaysInMonth(y: number, m: number) { return new Date(y, m + 1, 0).getDate(); }
 function getFirstDay(y: number, m: number) { return new Date(y, m, 1).getDay(); }
-function fmtDuration(min: number) {
-  const h = Math.floor(min / 60), m = min % 60;
-  return `${h}시간 ${m > 0 ? `${m}분` : ""}`;
-}
-
 export default function RecordsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useTabBarHeight();
+  const { date: requestedDate } = useLocalSearchParams<{ date?: string }>();
+  const { user, sessionVersion } = useAuth();
   const { records, averageDuration, averageScore, getRecordByDate, updateMemo } = useSleep();
 
   const today = new Date();
@@ -39,6 +39,20 @@ export default function RecordsScreen() {
   const [selectedDate, setSelectedDate] = useState(localDateKey(today));
   const [memoText, setMemoText] = useState("");
   const [editingMemo, setEditingMemo] = useState(false);
+  const [memoSaving, setMemoSaving] = useState(false);
+  const [memoError, setMemoError] = useState<string | null>(null);
+  useEffect(() => {
+    setEditingMemo(false); setMemoText(""); setMemoError(null);
+  }, [user?.id, sessionVersion]);
+
+  useEffect(() => {
+    if (requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
+      const date = new Date(`${requestedDate}T12:00:00`);
+      if (Number.isFinite(date.getTime())) {
+        setSelectedDate(requestedDate); setViewYear(date.getFullYear()); setViewMonth(date.getMonth()); setEditingMemo(false);
+      }
+    }
+  }, [requestedDate]);
 
   const daysInMonth = getDaysInMonth(viewYear, viewMonth);
   const firstDay = getFirstDay(viewYear, viewMonth);
@@ -56,15 +70,18 @@ export default function RecordsScreen() {
     const rec = getRecordByDate(dateStr);
     setMemoText(rec?.memo ?? "");
     setEditingMemo(false);
+    setMemoError(null);
   }
 
   async function saveMemo() {
-    if (!selectedRecord) return;
+    if (!selectedRecord || memoSaving) return;
+    setMemoSaving(true); setMemoError(null);
     try {
       await updateMemo(selectedRecord.id, memoText);
       setEditingMemo(false);
-      Alert.alert("저장", "메모가 저장되었습니다.");
-    } catch { Alert.alert("저장 실패", "현재 계정의 기록과 서버 연결을 확인해주세요."); }
+      if (Platform.OS !== "web") Alert.alert("저장", "메모가 저장되었습니다.");
+    } catch { setMemoError("메모를 저장하지 못했어요. 연결을 확인하고 다시 시도해주세요."); }
+    finally { setMemoSaving(false); }
   }
 
   function scoreColor(s: number) {
@@ -207,6 +224,7 @@ export default function RecordsScreen() {
                   { icon: "clock" as const, label: "수면 시간", value: fmtDuration(selectedRecord.durationMinutes), color: "#80CBC4" },
                   { icon: "volume-x" as const, label: "코골이 횟수", value: selectedRecord.snoringCount === undefined ? "--" : `${selectedRecord.snoringCount}회`, color: "#F48FB1" },
                   { icon: "thermometer" as const, label: "온도 / 습도", value: `${selectedRecord.temperature ?? "--"}°C / ${selectedRecord.humidity ?? "--"}%`, color: colors.mutedForeground },
+                  { icon: "star" as const, label: "수면 만족도", value: selectedRecord.ratings ? `전체 ${selectedRecord.ratings.total}/5 · 습도 ${selectedRecord.ratings.humidity}/5 · 온도 ${selectedRecord.ratings.temperature}/5` : "--", color: "#FFE082" },
                 ].map(({ icon, label, value, color }) => (
                   <View key={label} style={[styles.detailItem, { backgroundColor: colors.surface }]}>
                     <Feather name={icon} size={16} color={color} />
@@ -224,6 +242,7 @@ export default function RecordsScreen() {
                   <Feather name="edit-3" size={14} color="#FFE082" />
                   <Text style={[styles.memoTitle, { color: colors.text }]}>수면 메모</Text>
                   <Pressable
+                    disabled={memoSaving}
                     onPress={() => {
                       if (editingMemo) {
                         saveMemo();
@@ -234,7 +253,7 @@ export default function RecordsScreen() {
                     style={[styles.memoActionBtn, { backgroundColor: editingMemo ? "#FFE082" : colors.muted }]}
                   >
                     <Text style={[styles.memoActionText, { color: editingMemo ? "#1E203C" : colors.mutedForeground }]}>
-                      {editingMemo ? "저장" : "편집"}
+                      {memoSaving ? "저장 중" : editingMemo ? "저장" : "편집"}
                     </Text>
                   </Pressable>
                 </View>
@@ -242,6 +261,7 @@ export default function RecordsScreen() {
                   <TextInput
                     style={[styles.memoInput, { color: colors.text, borderColor: colors.border }]}
                     value={memoText}
+                    editable={!memoSaving}
                     onChangeText={setMemoText}
                     placeholder="오늘 수면에 대한 메모를 남겨보세요"
                     placeholderTextColor={colors.mutedForeground}
@@ -256,6 +276,7 @@ export default function RecordsScreen() {
                     {selectedRecord.memo || "메모가 없습니다. 편집 버튼을 눌러 추가하세요."}
                   </Text>
                 )}
+                {memoError && <Text style={{ color: colors.destructive, fontSize: 12, lineHeight: 18 }} accessibilityLiveRegion="polite">{memoError}</Text>}
               </View>
             </View>
           ) : (

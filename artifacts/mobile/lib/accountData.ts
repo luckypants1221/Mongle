@@ -1,5 +1,6 @@
 import type { SleepRecord, SleepStageSegment, User } from "./api";
 import { localDateKey, parseSleepScore } from "./snorePrediction";
+import { decodeSleepMemo } from "./sleepRecordMetadata";
 
 type Row = Record<string, unknown>;
 export function accountId(value: unknown): string | null {
@@ -85,42 +86,63 @@ export function parseAccountRecords(data: unknown, userId: string) {
   const input = rows(data, ["value", "records", "sleep_records"]);
   let rejected = 0;
   const byDate = new Map<string, SleepRecord>();
-  for (const [index, item] of input.entries()) {
+  for (const item of input) {
     if (!belongsToAccount(item, owner)) { rejected++; continue; }
-    const start = item.start_sleep ?? item.startTime ?? item.start_time;
-    const end = item.end_sleep ?? item.endTime ?? item.end_time;
-    const date = dateString(item.day ?? item.date ?? start);
+    const metadata = decodeSleepMemo(item.memo);
+    const start = metadata.startAt ?? item.start_sleep ?? item.startTime ?? item.start_time;
+    const end = metadata.endAt ?? item.end_sleep ?? item.endTime ?? item.end_time;
+    const date = dateString(metadata.startAt ?? item.day ?? item.date ?? start);
     const duration = finiteMetric(item.duration ?? item.durationMinutes ?? item.duration_minutes);
     if (!date || duration === undefined || duration < 0) { rejected++; continue; }
-    const score = parseSleepScore(item.sleep_score ?? item.score);
-    const count = finiteMetric(item.snoring_count ?? item.snoringCount);
+    const score = metadata.missing.includes("score") ? null : parseSleepScore(item.sleep_score ?? item.score);
+    const count = metadata.missing.includes("snoringCount") ? undefined : finiteMetric(item.snoring_count ?? item.snoringCount);
+    const startAt = typeof start === "string" && start.includes("T") && Number.isFinite(Date.parse(start)) ? start : undefined;
+    const endAt = typeof end === "string" && end.includes("T") && Number.isFinite(Date.parse(end)) ? end : undefined;
     const record: SleepRecord = {
-      id: String(item.sleep_id ?? item.record_id ?? `${owner}-${date}-${index}`), userId: owner, date,
-      startTime: timeString(start), endTime: timeString(end), durationMinutes: Math.round(duration),
+      id: String(item.sleep_id ?? item.record_id ?? `${owner}-${startAt ?? date + "T" + timeString(start)}`), userId: owner, date,
+      startTime: timeString(start), endTime: timeString(end), durationMinutes: duration,
+      startAt, endAt,
       score: score ?? 0, scoreAvailable: score !== null,
-      temperature: finiteMetric(item.temp_avg ?? item.temperature), humidity: finiteMetric(item.hum_avg ?? item.humidity),
+      temperature: metadata.missing.includes("temperature") ? undefined : finiteMetric(item.temp_avg ?? item.temperature),
+      humidity: metadata.missing.includes("humidity") ? undefined : finiteMetric(item.hum_avg ?? item.humidity),
       snoringCount: count !== undefined && count >= 0 ? Math.round(count) : undefined,
       audioPath: typeof item.audio_path === "string" ? item.audio_path : "",
-      memo: typeof item.memo === "string" ? item.memo : "",
+      memo: metadata.memo, ratings: metadata.ratings,
       createdAt: typeof (item.created_at ?? item.createdAt) === "string" ? String(item.created_at ?? item.createdAt) : undefined,
       sleepStages: parseSleepStages(item.sleep_stages ?? item.sleepStages ?? item.stages),
     };
     const previous = byDate.get(date);
     if (record.sleepStages && Math.abs(record.sleepStages.reduce((sum, segment) => sum + segment.durationMinutes, 0) - duration) > 1) record.sleepStages = undefined;
-    const time = record.createdAt ? Date.parse(record.createdAt) : NaN;
-    const previousTime = previous?.createdAt ? Date.parse(previous.createdAt) : NaN;
+    const time = Date.parse(record.createdAt ?? record.endAt ?? "");
+    const previousTime = Date.parse(previous?.createdAt ?? previous?.endAt ?? "");
     if (!previous || !Number.isFinite(previousTime) || (Number.isFinite(time) && time >= previousTime)) byDate.set(date, record);
   }
   return { records: [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)), rejected };
 }
-export function parseAccountSensor(data: unknown, userId: string, since: number, now = Date.now()) {
+export function parseAccountSensorSamples(data: unknown, userId: string, since: number, until = Date.now()) {
   const input = rows(data, ["value", "records", "sensors"], true).filter(row => belongsToAccount(row, userId));
   const candidates = input.map(row => {
     const rawTime = row.time_stamp ?? row.timestamp ?? row.created_at ?? row.createdAt;
     const timestamp = typeof rawTime === "string" ? Date.parse(rawTime) : NaN;
     return { temperature: finiteMetric(row.temp ?? row.temperature ?? row.temp_avg), humidity: finiteMetric(row.hum ?? row.humidity ?? row.hum_avg), timestamp };
-  }).filter(row => Number.isFinite(row.timestamp) && row.timestamp >= since - 5000 && now - row.timestamp <= 120000 && row.timestamp <= now + 5000 && (row.temperature !== undefined || row.humidity !== undefined));
-  return candidates.sort((a, b) => b.timestamp - a.timestamp)[0] ?? null;
+  }).filter(row => Number.isFinite(row.timestamp) && row.timestamp >= since && row.timestamp <= until && (row.temperature !== undefined || row.humidity !== undefined));
+  return candidates.sort((a, b) => b.timestamp - a.timestamp);
+}
+export function parseAccountSensor(data: unknown, userId: string, since: number, now = Date.now()) {
+  return parseAccountSensorSamples(data, userId, since - 5000, now + 5000).find(row => now - row.timestamp <= 120000) ?? null;
+}
+export class SleepSensorSamples {
+  private samples = new Map<number, ReturnType<typeof parseAccountSensorSamples>[number]>();
+  add(data: unknown, userId: string, since: number, until = Date.now()) {
+    for (const row of parseAccountSensorSamples(data, userId, since, until)) this.samples.set(row.timestamp, row);
+  }
+  averages() {
+    const average = (key: "temperature" | "humidity") => {
+      const values = [...this.samples.values()].map(row => row[key]).filter((value): value is number => value !== undefined);
+      return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
+    };
+    return { temperature: average("temperature"), humidity: average("humidity") };
+  }
 }
 
 export type RequestTicket = { key: string; channel: string; sequence: number; generation: number };

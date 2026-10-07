@@ -22,11 +22,12 @@ import { EnvModal, EnvType } from "@/components/EnvModal";
 import { SnorePredictionTile } from "@/components/SnorePredictionTile";
 import { localDateKey, previousDateKey } from "@/lib/snorePrediction";
 import { AccountDataNotice } from "@/components/AccountDataNotice";
+import { formatSleepDuration } from "@/lib/sleepRecording";
 
 const DAYS_KR = ["일", "월", "화", "수", "목", "금", "토"];
 
 function fmtDuration(min: number) {
-  return `${Math.floor(min / 60)}h ${min % 60}m`;
+  return formatSleepDuration(min, true);
 }
 
 function getWeekDates() {
@@ -275,7 +276,7 @@ export default function HomeScreen() {
               color={activeSession ? "#BBDDFF" : "#1E203C"}
             />
             <Text style={[styles.startText, { color: activeSession ? "#BBDDFF" : "#1E203C" }]}>
-              {activeSession ? "수면 측정 중 — 탭하여 보기" : "수면 시작하기"}
+              {activeSession?.endTime ? "기록 저장 대기 · 탭하여 다시 시도" : activeSession ? "수면 측정 중 — 탭하여 보기" : "수면 시작하기"}
             </Text>
             <Feather name="chevron-right" size={16} color={activeSession ? "#BBDDFF60" : "#1E203C60"} />
           </LinearGradient>

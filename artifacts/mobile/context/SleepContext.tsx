@@ -1,25 +1,30 @@
 import { Audio } from "expo-av";
+import axios from "axios";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { useAuth } from "@/context/AuthContext";
 import { useSleepMusic } from "@/hooks/useSleepMusic";
 import type { MusicState, MusicTrack } from "@/lib/sleepMusicPlayer";
 import { localDateKey, type SnoreAnswers } from "@/lib/snorePrediction";
-import { AccountRequestGate, parseAccountRecords, parseAccountSensor, requireAccountId } from "@/lib/accountData";
-import type { SleepRecord } from "@/lib/api";
+import { AccountRequestGate, parseAccountRecords, parseAccountSensor, requireAccountId, SleepSensorSamples } from "@/lib/accountData";
+import type { SleepRecord, SleepRatings } from "@/lib/api";
+import { buildSleepPayload, sameSleepMeasurement, SleepRecordWriter } from "@/lib/sleepRecording";
+import { validSleepRatings } from "@/lib/sleepRecordMetadata";
 import { createSleepInfoApi, getSensorApi, getSleepInfoApi, updateSleepInfoApi } from "@/services/authApi";
 export type { SleepRecord } from "@/lib/api";
 
 type ActiveSleepSession = {
-  ownerKey: string; userId: string; measurementId: number; startTime: Date;
+  ownerKey: string; userId: string; measurementId: number; startTime: Date; endTime?: Date;
   temperature?: number; humidity?: number; sensorUpdatedAt?: string;
 };
 interface SleepContextType {
   monthlyAverageDuration: number; monthlyAverageScore: number | null;
   records: SleepRecord[]; recordsLoading: boolean; recordsError: string | null;
   activeSession: ActiveSleepSession | null;
+  saveError: string | null; lastSavedRecord: SleepRecord | null;
   startSleep: () => void; endSleep: () => Promise<SleepRecord | null>;
   updateMemo: (id: string, memo: string) => Promise<void>;
+  saveRatings: (ratings: SleepRatings) => Promise<void>;
   refreshRecords: () => Promise<void>;
   getRecordByDate: (date: string) => SleepRecord | undefined;
   weeklyRecords: SleepRecord[]; averageDuration: number; averageScore: number | null;
@@ -37,17 +42,13 @@ function averageScoreFor(records: SleepRecord[]): number | null {
   const available = records.filter(record => record.scoreAvailable !== false && Number.isFinite(record.score));
   return available.length ? Math.round(available.reduce((sum, record) => sum + record.score, 0) / available.length) : null;
 }
-function buildDateTime(date: string, time: string) {
-  return new Date(time.includes("T") ? time : `${date}T${time.length === 5 ? time + ":00" : time}`);
-}
-function buildPayload(userId: string, record: SleepRecord) {
-  if (record.userId !== requireAccountId(userId) || record.temperature === undefined || record.humidity === undefined || record.snoringCount === undefined || record.scoreAvailable === false) {
-    throw new Error("기록의 계정 또는 실제 측정값을 확인할 수 없습니다.");
+function saveFailureMessage(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    if (error.response?.status === 422) return "서버가 수면 기록의 형식을 처리하지 못했어요. 다시 시도해주세요.";
+    if (error.response && error.response.status >= 500) return "서버에서 수면 기록을 저장하지 못했어요. 잠시 후 다시 시도해주세요.";
+    return "서버 응답을 확인하지 못했어요. 연결을 확인하고 다시 시도해주세요.";
   }
-  const start = buildDateTime(record.date, record.startTime);
-  const end = buildDateTime(record.date, record.endTime);
-  if (end < start) end.setDate(end.getDate() + 1);
-  return { id: Number(requireAccountId(userId)), sleep_score: record.score, start_sleep: start.toISOString(), end_sleep: end.toISOString(), temp_avg: Math.round(record.temperature), hum_avg: Math.round(record.humidity), audio_path: record.audioPath ?? "", duration: record.durationMinutes, snoring_count: record.snoringCount ?? 0, memo: record.memo ?? "" };
+  return error instanceof Error ? error.message : "수면 기록을 저장하지 못했어요. 다시 시도해주세요.";
 }
 export function SleepProvider({ children }: { children: React.ReactNode }) {
   const { user, sessionVersion } = useAuth();
@@ -61,6 +62,9 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   const recordsError = requestState.key === ownerKey ? requestState.error : null;
   const [rawSession, setRawSession] = useState<ActiveSleepSession | null>(null);
   const activeSession = rawSession?.ownerKey === ownerKey ? rawSession : null;
+  const [saveState, setSaveState] = useState<{ key: string | null; error: string | null; record: SleepRecord | null }>({ key: null, error: null, record: null });
+  const saveError = saveState.key === ownerKey ? saveState.error : null;
+  const lastSavedRecord = saveState.key === ownerKey ? saveState.record : null;
   const [alarmHour, setAlarmHour] = useState(7);
   const [alarmMin, setAlarmMin] = useState(0);
   const [alarmOn, setAlarmOnState] = useState(true);
@@ -76,7 +80,9 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   const measurementRef = useRef(0);
   const endingRef = useRef<number | null>(null);
   const sensorBusyRef = useRef<string | null>(null);
-  const { music, selectMusic, toggleMusic, setMusicVolume, stopMusic } = useSleepMusic(Boolean(activeSession), ownerKey ?? undefined);
+  const sensorSamplesRef = useRef<{ measurementId: number; samples: SleepSensorSamples } | null>(null);
+  const pendingWriteRef = useRef<{ ownerKey: string; measurementId: number; writer: SleepRecordWriter } | null>(null);
+  const { music, selectMusic, toggleMusic, setMusicVolume, stopMusic } = useSleepMusic(Boolean(activeSession && !activeSession.endTime), ownerKey ?? undefined);
   const musicAudibleRef = useRef(false);
   const musicLastActiveAtRef = useRef(0);
   const audible = music.playing || (music.loading && music.track !== "none");
@@ -94,6 +100,9 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void stopSnoreRecording();
     setRawSession(null);
+    pendingWriteRef.current = null;
+    sensorSamplesRef.current = null;
+    setSaveState({ key: ownerKey, error: null, record: null });
     setSurvey(null);
     setRecordState({ key: ownerKey, rows: [] });
     setRequestState({ key: ownerKey, loading: Boolean(ownerKey), error: null });
@@ -101,11 +110,11 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     if (user && ownerKey) void loadRecords(user.id);
   }, [ownerKey]);
   useEffect(() => {
-    if (!user || !activeSession) return;
+    if (!user || !activeSession || activeSession.endTime) return;
     void refreshSensorSnapshot(activeSession);
     const timer = setInterval(() => { void refreshSensorSnapshot(activeSession); }, SENSOR_POLL_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [ownerKey, activeSession?.measurementId]);
+  }, [ownerKey, activeSession?.measurementId, activeSession?.endTime]);
 
   function saveSnoreAnswers(answers: SnoreAnswers) {
     if (!ownerKey) return;
@@ -113,20 +122,23 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     setCurrentDate(date);
     setSurvey({ key: ownerKey, date, answers: { ...answers } });
   }
-  async function loadRecords(userId: string) {
+  async function loadRecords(userId: string, propagateError = false): Promise<SleepRecord[]> {
     const ticket = gate.begin("records", ownerKey);
-    if (!ticket) return;
+    if (!ticket) throw new Error("로그인 계정이 변경되었습니다.");
     setRequestState({ key: ticket.key, loading: true, error: null });
     try {
       const response = await getSleepInfoApi(requireAccountId(userId));
-      if (!gate.current(ticket)) return;
+      if (!gate.current(ticket)) return [];
       const parsed = parseAccountRecords(response.data, userId);
       setRecordState({ key: ticket.key, rows: parsed.records });
       setRequestState({ key: ticket.key, loading: false, error: parsed.rejected ? "계정이 다르거나 형식이 잘못된 서버 기록을 제외했습니다." : null });
+      return parsed.records;
     } catch {
-      if (!gate.current(ticket)) return;
+      if (!gate.current(ticket)) return [];
       setRecordState({ key: ticket.key, rows: [] });
       setRequestState({ key: ticket.key, loading: false, error: "수면 기록을 불러오지 못했어요. 서버 연결을 확인하고 다시 시도해주세요." });
+      if (propagateError) throw new Error("서버에서 저장된 기록을 확인하지 못했어요. 연결을 확인하고 다시 시도해주세요.");
+      return [];
     }
   }
   async function refreshRecords() { if (user && ownerKey) await loadRecords(user.id); }
@@ -139,6 +151,9 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await getSensorApi(session.userId);
       if (!gate.current(ticket)) return;
+      if (sensorSamplesRef.current?.measurementId === session.measurementId) {
+        sensorSamplesRef.current.samples.add(response.data, session.userId, session.startTime.getTime());
+      }
       const latest = parseAccountSensor(response.data, session.userId, session.startTime.getTime());
       setRawSession(current => {
         if (!current || current.ownerKey !== ticket.key || current.measurementId !== session.measurementId) return current;
@@ -156,6 +171,9 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   function startSleep() {
     if (!user || !ownerKey || activeSession) return;
     const session: ActiveSleepSession = { ownerKey, userId: requireAccountId(user.id), measurementId: ++measurementRef.current, startTime: new Date() };
+    sensorSamplesRef.current = { measurementId: session.measurementId, samples: new SleepSensorSamples() };
+    pendingWriteRef.current = null;
+    setSaveState({ key: ownerKey, error: null, record: null });
     gate.begin("sensor");
     snoreCountRef.current = 0; lastSnoreAtRef.current = 0; recordingAvailableRef.current = false;
     setRawSession(session);
@@ -206,32 +224,50 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     const ticket = gate.begin("ending");
     if (!ticket) return null;
     endingRef.current = session.measurementId;
+    setSaveState({ key: ticket.key, error: null, record: null });
     gate.begin("records");
     try {
-      const endTime = new Date();
-      await stopMusic();
-      if (!gate.current(ticket)) return null;
-      const snoringCount = await stopSnoreRecording();
-      if (!gate.current(ticket)) return null;
-      if (session.temperature === undefined || session.humidity === undefined || snoringCount === undefined) {
-        setRequestState({ key: ticket.key, loading: false, error: "필수 센서 또는 마이크 측정값이 없어 기록을 저장하지 않았어요. 임의의 값으로 채우지 않습니다." });
-        return null;
+      let pending = pendingWriteRef.current;
+      if (!pending || pending.ownerKey !== session.ownerKey || pending.measurementId !== session.measurementId) {
+        const endTime = session.endTime ?? new Date();
+        setRawSession(current => current?.ownerKey === session.ownerKey && current.measurementId === session.measurementId ? { ...current, endTime } : current);
+        gate.begin("sensor"); // Discard polls arriving after the measurement ended.
+        await stopMusic().catch(() => undefined);
+        if (!gate.current(ticket)) return null;
+        const snoringCount = await stopSnoreRecording();
+        if (!gate.current(ticket)) return null;
+        const samples = sensorSamplesRef.current?.measurementId === session.measurementId ? sensorSamplesRef.current.samples : new SleepSensorSamples();
+        try {
+          const response = await getSensorApi(session.userId);
+          if (!gate.current(ticket)) return null;
+          samples.add(response.data, session.userId, session.startTime.getTime(), endTime.getTime());
+        } catch { /* Optional sensor outages do not discard the measured sleep time. */ }
+        if (!gate.current(ticket)) return null;
+        const durationMinutes = Math.max(0, (endTime.getTime() - session.startTime.getTime()) / 60000);
+        // Existing time-based product score, not a clinical or REM analysis.
+        const score = Math.min(100, Math.max(40, 70 + Math.floor(durationMinutes / 10)));
+        const record: SleepRecord = {
+          id: `${session.userId}-${session.startTime.toISOString()}`, userId: session.userId,
+          date: localDateKey(session.startTime), startTime: session.startTime.toTimeString().slice(0, 5), endTime: endTime.toTimeString().slice(0, 5),
+          startAt: session.startTime.toISOString(), endAt: endTime.toISOString(), durationMinutes, score, scoreAvailable: true,
+          ...samples.averages(), snoringCount, audioPath: "", memo: "",
+        };
+        pending = { ownerKey: session.ownerKey, measurementId: session.measurementId, writer: new SleepRecordWriter(record) };
+        pendingWriteRef.current = pending;
       }
-      const durationMinutes = Math.max(0, Math.round((endTime.getTime() - session.startTime.getTime()) / 60000));
-      // This existing product score is calculated from this measurement's time;
-      // it is not a fabricated historical record or a server analysis result.
-      const score = Math.min(100, Math.max(40, 70 + Math.floor(durationMinutes / 10)));
-      const record: SleepRecord = { id: `${session.userId}-${localDateKey(session.startTime)}`, userId: session.userId, date: localDateKey(session.startTime), startTime: session.startTime.toTimeString().slice(0, 5), endTime: endTime.toTimeString().slice(0, 5), durationMinutes, score, scoreAvailable: true, temperature: session.temperature, humidity: session.humidity, snoringCount, audioPath: "", memo: "" };
-      await createSleepInfoApi(buildPayload(session.userId, record));
+      const saved = await pending.writer.save({
+        create: record => createSleepInfoApi(buildSleepPayload(session.userId, record)),
+        read: () => loadRecords(session.userId, true),
+      });
       if (!gate.current(ticket)) return null;
-      // Display the account-filtered server response, not a local fallback record.
-      await loadRecords(session.userId);
-      return gate.current(ticket) ? record : null;
-    } catch {
-      if (gate.current(ticket)) setRequestState({ key: ticket.key, loading: false, error: "수면 기록을 저장하지 못했어요. 서버 연결을 확인해주세요." });
+      setSaveState({ key: ticket.key, error: null, record: saved });
+      pendingWriteRef.current = null;
+      setRawSession(current => current?.ownerKey === session.ownerKey && current.measurementId === session.measurementId ? null : current);
+      return saved;
+    } catch (error) {
+      if (gate.current(ticket)) setSaveState({ key: ticket.key, record: null, error: saveFailureMessage(error) });
       return null;
     } finally {
-      setRawSession(current => current?.ownerKey === session.ownerKey && current.measurementId === session.measurementId ? null : current);
       if (endingRef.current === session.measurementId) endingRef.current = null;
     }
   }
@@ -241,21 +277,37 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     if (!target) throw new Error("현재 계정의 기록을 찾을 수 없습니다.");
     const ticket = gate.begin("memo");
     gate.begin("records");
-    await updateSleepInfoApi(buildPayload(user.id, { ...target, memo }));
-    if (!gate.current(ticket)) return;
-    await loadRecords(user.id);
+    await updateSleepInfoApi(buildSleepPayload(user.id, { ...target, memo }));
+    if (!gate.current(ticket)) throw new Error("로그인 계정이 변경되었습니다.");
+    const saved = (await loadRecords(user.id, true)).find(row => sameSleepMeasurement(row, target));
+    if (!gate.current(ticket) || !saved || saved.memo !== memo) throw new Error("서버에서 메모 저장을 확인하지 못했어요.");
+    if (lastSavedRecord && sameSleepMeasurement(target, lastSavedRecord)) setSaveState({ key: ticket!.key, error: null, record: saved });
+  }
+  async function saveRatings(ratings: SleepRatings) {
+    if (!user || !ownerKey || !lastSavedRecord || lastSavedRecord.userId !== user.id) throw new Error("평가할 수면 기록이 없습니다.");
+    if (!validSleepRatings(ratings)) throw new Error("만족도를 모두 선택해주세요.");
+    const ticket = gate.begin("ratings");
+    const updated = { ...lastSavedRecord, ratings };
+    gate.begin("records");
+    await updateSleepInfoApi(buildSleepPayload(user.id, updated));
+    if (!gate.current(ticket)) throw new Error("로그인 계정이 변경되었습니다.");
+    const saved = (await loadRecords(user.id, true)).find(row => sameSleepMeasurement(row, updated));
+    if (!gate.current(ticket) || !saved || !saved.ratings || ["total", "humidity", "temperature"].some(key => saved.ratings![key as keyof SleepRatings] !== ratings[key as keyof SleepRatings])) {
+      throw new Error("서버에서 만족도 저장을 확인하지 못했어요. 다시 시도해주세요.");
+    }
+    setSaveState({ key: ticket!.key, error: null, record: saved });
   }
   const getRecordByDate = useCallback((date: string) => records.find(record => record.date === date), [records]);
   const oneMonthRecords = records.filter(record => {
     const age = Date.now() - new Date(`${record.date}T00:00:00`).getTime();
     return age >= 0 && age <= 30 * 86400000;
   });
-  const monthlyAverageDuration = oneMonthRecords.length ? Math.round(oneMonthRecords.reduce((sum, record) => sum + record.durationMinutes, 0) / oneMonthRecords.length) : 0;
+  const monthlyAverageDuration = oneMonthRecords.length ? oneMonthRecords.reduce((sum, record) => sum + record.durationMinutes, 0) / oneMonthRecords.length : 0;
   const monthlyAverageScore = averageScoreFor(oneMonthRecords);
   const weeklyRecords = records.slice(-7);
-  const averageDuration = records.length ? Math.round(records.reduce((sum, record) => sum + record.durationMinutes, 0) / records.length) : 0;
+  const averageDuration = records.length ? records.reduce((sum, record) => sum + record.durationMinutes, 0) / records.length : 0;
   const averageScore = averageScoreFor(records);
-  return <SleepContext.Provider value={{ monthlyAverageDuration, monthlyAverageScore, records, recordsLoading, recordsError, activeSession, startSleep, endSleep, updateMemo, refreshRecords, getRecordByDate, weeklyRecords, averageDuration, averageScore, alarmHour, alarmMin, alarmOn, setAlarm, setAlarmOn, music, selectMusic, toggleMusic, setMusicVolume, currentDate, snoreAnswers, saveSnoreAnswers }}>{children}</SleepContext.Provider>;
+  return <SleepContext.Provider value={{ monthlyAverageDuration, monthlyAverageScore, records, recordsLoading, recordsError, activeSession, saveError, lastSavedRecord, startSleep, endSleep, updateMemo, saveRatings, refreshRecords, getRecordByDate, weeklyRecords, averageDuration, averageScore, alarmHour, alarmMin, alarmOn, setAlarm, setAlarmOn, music, selectMusic, toggleMusic, setMusicVolume, currentDate, snoreAnswers, saveSnoreAnswers }}>{children}</SleepContext.Provider>;
 }
 export function useSleep() {
   const context = useContext(SleepContext);

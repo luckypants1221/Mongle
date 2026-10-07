@@ -27,7 +27,7 @@ function formatElapsed(s: number) {
 export default function SleepScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { activeSession, endSleep, alarmHour, alarmMin } = useSleep();
+  const { activeSession, endSleep, saveError, lastSavedRecord, alarmHour, alarmMin } = useSleep();
 
   const [elapsed, setElapsed] = useState(0);
   const [ending, setEnding] = useState(false);
@@ -40,24 +40,26 @@ export default function SleepScreen() {
   useEffect(() => {
     const iv = setInterval(() => {
       if (activeSession) {
-        setElapsed(Math.floor((Date.now() - activeSession.startTime.getTime()) / 1000));
+        setElapsed(Math.floor(((activeSession.endTime?.getTime() ?? Date.now()) - activeSession.startTime.getTime()) / 1000));
       }
     }, 1000);
     return () => clearInterval(iv);
   }, [activeSession]);
 
   useEffect(() => {
-    if (hasSession.current && !activeSession && !ending) {
+    if (hasSession.current && !activeSession && !ending && !lastSavedRecord) {
       router.replace("/(tabs)");
     }
-  }, [activeSession, ending]);
+  }, [activeSession, ending, lastSavedRecord]);
 
   async function handleEndSleep() {
     if (ending) return;
     setEnding(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await endSleep();
-    router.replace("/sleep_rating");
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+    try {
+      const saved = await endSleep();
+      if (saved) { hasSession.current = false; router.replace("/sleep_rating"); }
+    } finally { setEnding(false); }
   }
 
   if (!activeSession) {
@@ -94,7 +96,7 @@ export default function SleepScreen() {
         </Pressable>
         <View style={styles.headerCenter}>
           <View style={[styles.liveDot, { backgroundColor: colors.success }]} />
-          <Text style={styles.headerTitle}>수면 측정 중</Text>
+          <Text style={styles.headerTitle}>{activeSession.endTime ? "측정 종료 · 저장 확인" : "수면 측정 중"}</Text>
         </View>
         <View style={{ width: 44 }} />
       </View>
@@ -122,7 +124,7 @@ export default function SleepScreen() {
         </View>
 
         {/* 수면 진행 바 */}
-        <SleepMusicCard disabled={ending} />
+        <SleepMusicCard disabled={ending || Boolean(activeSession.endTime)} />
 
         <View style={[styles.progressCard, { backgroundColor: colors.card }]}>
           <View style={styles.progressHeader}>
@@ -176,6 +178,15 @@ export default function SleepScreen() {
         </View>
 
         {/* 수면 종료 버튼 */}
+        {saveError && <View style={[styles.progressCard, { backgroundColor: colors.card }]}>
+          <Text style={{ color: colors.destructive, fontSize: 14, fontWeight: "700" }}>기록 저장을 확인하지 못했어요</Text>
+          <Text style={{ color: colors.mutedForeground, fontSize: 13, lineHeight: 20 }} accessibilityLiveRegion="polite">
+            {saveError}{"\n"}측정한 기록은 이 화면에 유지되어 있어요. 연결을 확인하고 다시 시도해주세요.
+          </Text>
+        </View>}
+        <Text style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 18 }}>
+          센서나 마이크가 연결되지 않아도 수면시간은 저장돼요. 측정하지 못한 항목은 기록에 --로 표시됩니다.
+        </Text>
         <Pressable
           style={({ pressed }) => [styles.endBtn, { opacity: pressed || ending ? 0.85 : 1 }]}
           onPress={handleEndSleep}
@@ -192,7 +203,7 @@ export default function SleepScreen() {
             ) : (
               <>
                 <Feather name="stop-circle" size={22} color="#fff" />
-                <Text style={styles.endBtnText}>수면 종료</Text>
+                <Text style={styles.endBtnText}>{activeSession.endTime ? "기록 저장 다시 시도" : "수면 종료 후 저장"}</Text>
               </>
             )}
           </LinearGradient>

@@ -3,7 +3,7 @@ import { useColors } from "@/hooks/useColors";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -11,8 +11,10 @@ import {
   StyleSheet,
   Text,
   View,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSleep } from "@/context/SleepContext";
 
 type RatingKey = "total" | "humidity" | "temperature";
 
@@ -49,28 +51,42 @@ const RATING_ITEMS: {
 export default function SleepRatingScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { lastSavedRecord, saveRatings } = useSleep();
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [ratings, setRatings] = useState<Record<RatingKey, number>>({
     total: 0,
     humidity: 0,
     temperature: 0,
   });
+  useEffect(() => {
+    setRatings(lastSavedRecord?.ratings ?? { total: 0, humidity: 0, temperature: 0 });
+    setSaveError(null);
+  }, [lastSavedRecord?.id]);
 
   const topPad = Platform.OS === "web" ? 64 : insets.top + 16;
   const bottomPad = Platform.OS === "web" ? 32 : insets.bottom + 20;
-  const canSubmit = Object.values(ratings).every((rating) => rating > 0);
+  const canSubmit = Boolean(lastSavedRecord) && Object.values(ratings).every((rating) => rating > 0);
   const average = Math.round(
     (ratings.total + ratings.humidity + ratings.temperature) / 3
   );
 
   function setRating(key: RatingKey, value: number) {
-    Haptics.selectionAsync();
+    if (saving) return;
+    void Haptics.selectionAsync().catch(() => undefined);
     setRatings((current) => ({ ...current, [key]: value }));
   }
 
   async function handleSubmit() {
-    if (!canSubmit) return;
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.replace("/(tabs)/records");
+    if (!canSubmit || saving) return;
+    setSaving(true); setSaveError(null);
+    try {
+      await saveRatings(ratings);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      router.replace({ pathname: "/(tabs)/records", params: { date: lastSavedRecord!.date } });
+    } catch (error) {
+      setSaveError("만족도를 저장하지 못했어요. 연결을 확인하고 다시 시도해주세요. 선택한 별점은 유지됩니다.");
+    } finally { setSaving(false); }
   }
 
   return (
@@ -86,8 +102,8 @@ export default function SleepRatingScreen() {
           <View style={styles.headerIcon}>
             <Feather name="check-circle" size={28} color="#BBDDFF" />
           </View>
-          <Text style={styles.title}>수면 측정 완료</Text>
-          <Text style={styles.subtitle}>방금 잔 수면을 짧게 평가해주세요.</Text>
+          <Text style={styles.title}>{lastSavedRecord ? "수면 기록 저장 완료" : "저장된 기록을 확인해주세요"}</Text>
+          <Text style={styles.subtitle}>{lastSavedRecord ? "방금 잔 수면을 짧게 평가해주세요." : "측정 화면에서 수면 기록을 먼저 저장해주세요."}</Text>
         </View>
 
         <View style={[styles.summary, { backgroundColor: colors.card }]}>
@@ -118,6 +134,9 @@ export default function SleepRatingScreen() {
                   return (
                     <Pressable
                       key={star}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${item.title} ${star}점`}
+                      disabled={saving || !lastSavedRecord}
                       onPress={() => setRating(item.key, star)}
                       style={({ pressed }) => [
                         styles.starButton,
@@ -142,7 +161,7 @@ export default function SleepRatingScreen() {
         </View>
 
         <Pressable
-          disabled={!canSubmit}
+          disabled={!canSubmit || saving}
           onPress={handleSubmit}
           style={({ pressed }) => [
             styles.submitButton,
@@ -155,11 +174,13 @@ export default function SleepRatingScreen() {
             end={{ x: 1, y: 0 }}
             style={styles.submitGradient}
           >
-            <Text style={[styles.submitText, { color: canSubmit ? "#1E203C" : "#A8B0C6" }]}>
-              기록 화면으로 이동
-            </Text>
+            {saving ? <ActivityIndicator color="#1E203C" /> : <Text style={[styles.submitText, { color: canSubmit ? "#1E203C" : "#A8B0C6" }]}>만족도 저장 후 기록 보기</Text>}
             <Feather name="arrow-right" size={18} color={canSubmit ? "#1E203C" : "#A8B0C6"} />
           </LinearGradient>
+        </Pressable>
+        {saveError && <Text style={{ color: colors.destructive, lineHeight: 20 }} accessibilityLiveRegion="polite">{saveError}</Text>}
+        <Pressable disabled={saving} onPress={() => router.replace({ pathname: "/(tabs)/records", params: { date: lastSavedRecord?.date } })} accessibilityRole="button">
+          <Text style={{ color: colors.mutedForeground, textAlign: "center", padding: 12 }}>평가 없이 기록 보기</Text>
         </Pressable>
       </ScrollView>
     </LinearGradient>
