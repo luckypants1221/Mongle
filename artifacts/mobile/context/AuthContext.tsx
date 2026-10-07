@@ -47,7 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   ): Promise<boolean> {
     try {
       const res = await loginApi(email, pwd);
-
+      console.log("로그인 응답:", res.status, res.data);
       if (
         res.data.message !==
         "login success"
@@ -55,7 +55,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
 
-      const user = { id: res.data.id, name: res.data.name, email: res.data.email };
+      const user = {
+        id: String(res.data.user_id),
+        name: res.data.user_name ?? "",
+        email: email
+      };
 
       await AsyncStorage.setItem(
         "@sleep_user",
@@ -65,7 +69,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(user);
 
       return true;
-    } catch {
+    } catch (error: any) {
+      console.log("로그인 에러:", error.message);          // ← 추가
+      console.log("상태:", error.response?.status);
+      console.log("데이터:", error.response?.data);
       return false;
     }
   }

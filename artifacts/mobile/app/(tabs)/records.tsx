@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useSleep } from "@/context/SleepContext";
+import { useSleep, toLocalDateStr } from "@/context/SleepContext";
 import { useColors } from "@/hooks/useColors";
 import { useTabBarHeight } from "@/hooks/useTabBarHeight";
 
@@ -34,7 +34,8 @@ export default function RecordsScreen() {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
-  const [selectedDate, setSelectedDate] = useState(today.toISOString().split("T")[0]);
+  // const [selectedDate, setSelectedDate] = useState(today.toISOString().split("T")[0]);
+  const [selectedDate, setSelectedDate] = useState(toLocalDateStr(today));
   const [memoText, setMemoText] = useState("");
   const [editingMemo, setEditingMemo] = useState(false);
 
@@ -128,7 +129,8 @@ export default function RecordsScreen() {
               const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
               const rec = getRecordByDate(dateStr);
               const isSel = dateStr === selectedDate;
-              const isToday = dateStr === today.toISOString().split("T")[0];
+              // const isToday = dateStr === today.toISOString().split("T")[0];
+              const isToday = dateStr === toLocalDateStr(today);
               return (
                 <Pressable
                   key={dateStr}

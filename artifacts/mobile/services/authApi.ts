@@ -3,13 +3,14 @@ import axios from "axios";
 
 const api = axios.create({
   baseURL: "http://13.125.10.228/",
+  timeout: 10000,
 });
 
 //로그안
 export const loginApi = (
   email: string,
   pwd: string
-) => api.post("/login", { email, pwd });
+) => api.post("/login", { name: "", email, pwd });
 //회원가입
 export const signupApi = (
   name: string,
@@ -31,9 +32,11 @@ export const signupApi = (
 
 //수면 기록
 export const sleepinfoApi = (
-  id: string
+  id: string | number
 ) =>
-  api.get(`/sleepinfo?id=${id}`);
+  api.get("/sleepinfo", {
+    params: { id }
+  });
 
 //비밀번호 변경
 export const changePasswordApi = (
@@ -61,3 +64,17 @@ export const updateProfileApi = (
   name: string,
   email: string
 ) => api.put(`/profile?user_id=${id}`, { name, email });
+
+// 수면 기록 저장 (엔드포인트와 필드명은 서버 /docs에서 확인해서 맞추세요)
+export const saveSleepApi = (data: {
+  id: number;
+  sleep_score: number;
+  start_sleep: string;   // ISO 문자열
+  end_sleep: string;     // ISO 문자열
+  temp_avg: number;
+  hum_avg: number;
+  audio_path: string;
+  duration: number;
+  snoring_count: number;
+  memo: string;
+}) => api.post("/sleepinfo", data);

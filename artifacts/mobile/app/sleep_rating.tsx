@@ -5,15 +5,27 @@ import {
     StyleSheet,
     Pressable,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSleep } from "@/context/SleepContext";
 
 export default function SleepRatinScreen() {
+    const { recordId } = useLocalSearchParams<{ recordId?: string }>();
+    const { updateRating } = useSleep();
     const [totalRating, setTotalRating] = useState(0);
     const [tempRating, setTempRating] = useState(0);
     const [humRating, setHumRating] = useState(0);
+    const canSubmit = totalRating > 0 && tempRating > 0 && humRating > 0;
 
     const handleSubmit = async () => {
+        console.log("rating submit:", { recordId, totalRating, tempRating, humRating });
+        if (recordId) {
+            await updateRating(recordId, {
+                total: totalRating,
+                temp: tempRating,
+                hum: humRating,
+            });
+        }
         //API 저장
         router.replace("/");
     }
@@ -76,12 +88,12 @@ export default function SleepRatinScreen() {
                     ? `${rating}/5` : "벌점을 선택해주세요"}
             </Text> */}
             <Pressable
-                // disabled={rating === 0}
+                disabled={totalRating === 0 || tempRating === 0 || humRating === 0}
                 onPress={handleSubmit}
                 style={[
                     styles.button,
                     {
-                        // opacity: rating === 0 ? 0.5 : 1,
+                        opacity: canSubmit ? 1 : 0.4
                     },
                 ]}>
                 <Text style={styles.buttonText}>

@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
-import { useSleep } from "@/context/SleepContext";
+import { useSleep, toLocalDateStr } from "@/context/SleepContext";
 import { useColors } from "@/hooks/useColors";
 import { useTabBarHeight } from "@/hooks/useTabBarHeight";
 import { RemGraph } from "@/components/RemGraph";
@@ -54,16 +54,17 @@ export default function HomeScreen() {
   const [lighting, setLighting] = useState("off");
 
   const today = new Date();
-  const todayStr = today.toISOString().split("T")[0];
+  // const todayStr = today.toISOString().split("T")[0];
+  const todayStr = toLocalDateStr(today);
   const lastRecord = weeklyRecords[weeklyRecords.length - 1];
   const weekDates = getWeekDates();
   const topPad = Platform.OS === "web" ? 56 : insets.top;
 
   const scoreColor =
     !lastRecord ? colors.mutedForeground
-    : lastRecord.score >= 80 ? "#4CAF50"
-    : lastRecord.score >= 60 ? "#FFE082"
-    : "#EF5350";
+      : lastRecord.score >= 80 ? "#4CAF50"
+        : lastRecord.score >= 60 ? "#FFE082"
+          : "#EF5350";
 
   function handleStartSleep() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -105,7 +106,8 @@ export default function HomeScreen() {
         {/* 주간 달력 */}
         <View style={styles.weekRow}>
           {weekDates.map((d, i) => {
-            const str = d.toISOString().split("T")[0];
+            // const str = d.toISOString().split("T")[0];
+            const str = toLocalDateStr(d);
             const rec = getRecordByDate(str);
             const isToday = str === todayStr;
             return (
@@ -118,8 +120,8 @@ export default function HomeScreen() {
                   isToday
                     ? { backgroundColor: "#BBDDFF" }
                     : rec
-                    ? { backgroundColor: "rgba(187,221,255,0.12)", borderColor: "#BBDDFF50", borderWidth: 1 }
-                    : { borderColor: "#353860", borderWidth: 1 },
+                      ? { backgroundColor: "rgba(187,221,255,0.12)", borderColor: "#BBDDFF50", borderWidth: 1 }
+                      : { borderColor: "#353860", borderWidth: 1 },
                 ]}>
                   <Text style={[styles.dayNum, { color: isToday ? "#1E203C" : rec ? "#BBDDFF" : "#7A8AA6" }]}>
                     {d.getDate()}

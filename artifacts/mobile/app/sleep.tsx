@@ -55,8 +55,11 @@ export default function SleepScreen() {
     if (ending) return;
     setEnding(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await endSleep();
-    router.replace("/sleep_rating");
+    const record = await endSleep();
+    router.replace({
+      pathname: "/sleep_rating",
+      params: { recordId: record?.id ?? "" },
+    });
   }
 
   if (!activeSession) {

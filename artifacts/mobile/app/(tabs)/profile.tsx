@@ -6,6 +6,7 @@ import React, { useState } from "react";
 import {
   Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -13,6 +14,7 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -20,37 +22,6 @@ import { useAuth } from "@/context/AuthContext";
 import { useSleep } from "@/context/SleepContext";
 import { useColors } from "@/hooks/useColors";
 import { useTabBarHeight } from "@/hooks/useTabBarHeight";
-import { TextInput } from "react-native-gesture-handler";
-
-/* ─── 시간 피커 ──────────────────────────────────────── */
-function TimeSpinner({
-  value, min, max, onChange, padded = true,
-}: { value: number; min: number; max: number; onChange: (v: number) => void; padded?: boolean }) {
-  const colors = useColors();
-  function dec() { const v = value <= min ? max : value - 1; onChange(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }
-  function inc() { const v = value >= max ? min : value + 1; onChange(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }
-  const display = padded ? String(value).padStart(2, "0") : String(value);
-  return (
-    <View style={sp.wrap}>
-      <Pressable onPress={inc} style={({ pressed }) => [sp.arrowBtn, { backgroundColor: colors.surface, opacity: pressed ? 0.6 : 1 }]}>
-        <Feather name="chevron-up" size={22} color="#BBDDFF" />
-      </Pressable>
-      <View style={[sp.numBox, { backgroundColor: colors.background }]}>
-        <Text style={[sp.num, { color: "#BBDDFF" }]}>{display}</Text>
-      </View>
-      <Pressable onPress={dec} style={({ pressed }) => [sp.arrowBtn, { backgroundColor: colors.surface, opacity: pressed ? 0.6 : 1 }]}>
-        <Feather name="chevron-down" size={22} color="#BBDDFF" />
-      </Pressable>
-    </View>
-  );
-}
-
-const sp = StyleSheet.create({
-  wrap: { alignItems: "center", gap: 8 },
-  arrowBtn: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
-  numBox: { width: 80, height: 80, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  num: { fontSize: 40, fontWeight: "800", letterSpacing: 1 },
-});
 
 /* ─── 공통 설정 행 ──────────────────────────────────── */
 interface SettingRowProps {
@@ -88,31 +59,92 @@ export default function ProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useTabBarHeight();
-  const { user, logout } = useAuth();
-  const { averageDuration, averageScore, records, alarmHour, alarmMin, alarmOn, setAlarm, setAlarmOn } = useSleep();
+  const { user, logout, changePassword } = useAuth();
+  const {
+    averageDuration, averageScore, records,
+    alarmHour, alarmMin, alarmOn,
+    setAlarm, setAlarmOn,
+    alarmPresets, addAlarmPreset, editAlarmPreset, removeAlarmPreset,
+  } = useSleep();
 
+  /* 알람 시간 모달 상태 */
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [draftHour, setDraftHour] = useState(7);
-  const [draftMin, setDraftMin] = useState(0);
-  const [sleepGoal, setSleepGoal] = useState(480);
+  const [draftPM, setDraftPM] = useState(false);
+  const [hourText, setHourText] = useState("7");
+  const [minText, setMinText] = useState("00");
+  // null: 알람 시간 직접 설정 / "new": 프리셋 추가 / {h,m}: 프리셋 수정
+  const [editTarget, setEditTarget] = useState<null | "new" | { h: number; m: number }>(null);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const period = alarmHour < 12 ? "오전" : "오후";
   const hour12 = alarmHour === 0 ? 12 : alarmHour > 12 ? alarmHour - 12 : alarmHour;
-  const alarmStr = `${period} ${String(hour12).padStart(2, "0")}:${String(alarmMin).padStart(2, "0")}`;
-  const draftPeriod = draftHour < 12 ? "오전" : "오후";
-  const draftH12 = draftHour === 0 ? 12 : draftHour > 12 ? draftHour - 12 : draftHour;
-  const goalStr = `${Math.floor(sleepGoal / 60)}시간`;
+
+  const parsed = parseDraft();
+  const draftPeriod = draftPM ? "오후" : "오전";
+  const previewStr = parsed
+    ? `${String(parsed.h12).padStart(2, "0")}:${String(parsed.m).padStart(2, "0")}`
+    : "--:--";
+
+  function loadDraft(h: number, m: number) {
+    setDraftPM(h >= 12);
+    setHourText(String(h === 0 ? 12 : h > 12 ? h - 12 : h));
+    setMinText(String(m).padStart(2, "0"));
+  }
+
+  function parseDraft(): { h: number; m: number; h12: number } | null {
+    const h12 = parseInt(hourText, 10);
+    const m = parseInt(minText, 10);
+    if (isNaN(h12) || isNaN(m) || h12 < 1 || h12 > 12 || m < 0 || m > 59) return null;
+    return { h: (h12 % 12) + (draftPM ? 12 : 0), m, h12 };
+  }
+
+  function closePicker() {
+    setPickerOpen(false);
+    setEditTarget(null);
+  }
 
   function openPicker() {
-    setDraftHour(alarmHour); setDraftMin(alarmMin);
+    setEditTarget(null);
+    loadDraft(alarmHour, alarmMin);
     setPickerOpen(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }
 
+  function openPresetEditor(target: "new" | { h: number; m: number }) {
+    if (target === "new") loadDraft(7, 0);
+    else loadDraft(target.h, target.m);
+    setEditTarget(target);
+    setPickerOpen(true);
+  }
+
+  function fmtPreset(h: number, m: number) {
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${h < 12 ? "오전" : "오후"} ${h12}:${String(m).padStart(2, "0")}`;
+  }
+
+  function onPresetLongPress(p: { h: number; m: number }) {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert(fmtPreset(p.h, p.m), "이 알람 시간을 어떻게 할까요?", [
+      { text: "수정", onPress: () => openPresetEditor(p) },
+      { text: "삭제", style: "destructive", onPress: () => removeAlarmPreset(p.h, p.m) },
+      { text: "취소", style: "cancel" },
+    ]);
+  }
+
   async function confirmAlarm() {
-    await setAlarm(draftHour, draftMin);
-    setPickerOpen(false);
+    const t = parseDraft();
+    if (!t) {
+      Alert.alert("시간 확인", "시는 1~12, 분은 0~59 사이로 입력해주세요.");
+      return;
+    }
+    if (editTarget === "new") {
+      await addAlarmPreset(t.h, t.m);
+    } else if (editTarget) {
+      await editAlarmPreset(editTarget.h, editTarget.m, t.h, t.m);
+    } else {
+      await setAlarm(t.h, t.m);
+    }
+    closePicker();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }
 
@@ -121,69 +153,45 @@ export default function ProfileScreen() {
       { text: "취소", style: "cancel" },
       {
         text: "로그아웃", style: "destructive",
-        onPress: async () => { await logout(); router.replace("/(auth)/login"); }
+        onPress: async () => { await logout(); router.replace("/(auth)/login"); },
       },
     ]);
   }
 
-  function pickGoal() {
-    Alert.alert("수면 목표", "목표 수면 시간을 선택하세요", [
-      { text: "6시간", onPress: () => setSleepGoal(360) },
-      { text: "7시간", onPress: () => setSleepGoal(420) },
-      { text: "8시간 (권장)", onPress: () => setSleepGoal(480) },
-      { text: "9시간", onPress: () => setSleepGoal(540) },
-      { text: "취소", style: "cancel" },
-    ]);
-  }
-
-
-  //비밀번호 변경
+  /* 비밀번호 변경 */
   const [userUpdatePicker, setUserUpdatePicker] = useState(false);
-
-  const [newEmail, setNewEmail] = useState(user?.email ?? "");
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [currentPassword, setCurrentPassword] = useState("");
 
-  const {
-    user: currentUser,
-    changePassword
-  } = useAuth();
+  function closeUserModal() {
+    setUserUpdatePicker(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+  }
 
   async function handleProfileUpdate() {
-    console.log("저장 버튼 클릭");
-    console.log(currentUser);
-    if (!currentUser) return;
+    if (!user) return;
 
+    if (!currentPassword || !newPassword) {
+      Alert.alert("오류", "비밀번호를 모두 입력해주세요.");
+      return;
+    }
     if (newPassword !== confirmPassword) {
-      Alert.alert(
-        "오류",
-        "비밀번호가 일치하지 않습니다."
-      );
+      Alert.alert("오류", "새 비밀번호가 일치하지 않습니다.");
       return;
     }
 
-    const success = await changePassword(
-      currentUser.id,
-      currentPassword,
-      newPassword
-    );
+    const success = await changePassword(user.id, currentPassword, newPassword);
 
     if (success) {
-      Alert.alert(
-        "완료",
-        "비밀번호가 변경되었습니다."
-      );
-      setUserUpdatePicker(false);
+      Alert.alert("완료", "비밀번호가 변경되었습니다.");
+      closeUserModal();
     } else {
-      Alert.alert(
-        "오류",
-        "현재 비밀번호가 올바르지 않습니다."
-      );
+      Alert.alert("오류", "현재 비밀번호가 올바르지 않습니다.");
     }
   }
-
-
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -203,156 +211,6 @@ export default function ProfileScreen() {
             <Pressable style={styles.editBtn} onPress={() => setUserUpdatePicker(true)}>
               <Feather name="edit-2" size={14} color="#FFE082" />
             </Pressable>
-            <Modal
-              visible={userUpdatePicker}
-              transparent
-              animationType="slide"
-              onRequestClose={() => setUserUpdatePicker(false)}
-            >
-              <View style={styles.userBackdrop}>
-                <View
-                  style={[
-                    styles.userSheet,
-                    { backgroundColor: colors.card }
-                  ]}
-                >
-                  <Pressable
-                    style={styles.userCloseBtn}
-                    onPress={() => setUserUpdatePicker(false)}
-                  >
-                    <Feather
-                      name="x"
-                      size={22}
-                      color={colors.mutedForeground}
-                    />
-                  </Pressable>
-
-                  <Text
-                    style={[
-                      styles.userTitle,
-                      { color: colors.text }
-                    ]}
-                  >
-                    회원정보 수정
-                  </Text>
-
-                  {/* 이메일 */}
-                  <Text
-                    style={[
-                      styles.userLabel,
-                      { color: colors.mutedForeground }
-                    ]}
-                  >
-                    현재 비밀번호
-                  </Text>
-
-                  <View
-                    style={[
-                      styles.inputIconWrap,
-                      { backgroundColor: colors.surface }
-                    ]}
-                  >
-                    <Feather
-                      name="mail"
-                      size={18}
-                      color="#BBDDFF"
-                    />
-
-                    <TextInput
-                      value={newEmail}
-                      onChangeText={setNewEmail}
-                      placeholder="현재 비밀번호 입력"
-                      placeholderTextColor={colors.mutedForeground}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      style={{
-                        flex: 1,
-                        color: colors.text,
-                      }}
-                    />
-                  </View>
-
-                  {/* 비밀번호 */}
-                  <Text
-                    style={[
-                      styles.userLabel,
-                      { color: colors.mutedForeground }
-                    ]}
-                  >
-                    새 비밀번호
-                  </Text>
-
-                  <View
-                    style={[
-                      styles.inputIconWrap,
-                      { backgroundColor: colors.surface }
-                    ]}
-                  >
-                    <Feather
-                      name="lock"
-                      size={18}
-                      color="#FFE082"
-                    />
-
-                    <TextInput
-                      value={newPassword}
-                      onChangeText={setNewPassword}
-                      placeholder="새 비밀번호"
-                      placeholderTextColor={colors.mutedForeground}
-                      secureTextEntry
-                      style={{
-                        flex: 1,
-                        color: colors.text,
-                      }}
-                    />
-                  </View>
-
-                  <View
-                    style={[
-                      styles.inputIconWrap,
-                      { backgroundColor: colors.surface }
-                    ]}
-                  >
-                    <Feather
-                      name="shield"
-                      size={18}
-                      color="#80CBC4"
-                    />
-
-                    <TextInput
-                      value={confirmPassword}
-                      onChangeText={setConfirmPassword}
-                      placeholder="비밀번호 확인"
-                      placeholderTextColor={colors.mutedForeground}
-                      secureTextEntry
-                      style={{
-                        flex: 1,
-                        color: colors.text,
-                      }}
-                    />
-                  </View>
-
-                  <Pressable
-                    style={styles.userSaveBtn}
-                    onPress={handleProfileUpdate}
-                  >
-                    <LinearGradient
-                      colors={["#FFE082", "#FFD040"]}
-                      style={styles.userSaveGrad}
-                    >
-                      <Feather
-                        name="bell"
-                        size={18}
-                        color="#1E203C"
-                      />
-                      <Text style={styles.userSaveText}>
-                        저장하기
-                      </Text>
-                    </LinearGradient>
-                  </Pressable>
-                </View>
-              </View>
-            </Modal>
           </View>
           <View style={styles.miniStatsRow}>
             {[
@@ -378,7 +236,7 @@ export default function ProfileScreen() {
             <Text style={[styles.alarmCardTitle, { color: colors.text }]}>기상 알람</Text>
             <Switch
               value={alarmOn}
-              onValueChange={(v) => { setAlarmOn(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }} /* eslint-disable-line @typescript-eslint/no-misused-promises */
+              onValueChange={(v) => { setAlarmOn(v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
               trackColor={{ false: colors.muted, true: "#BBDDFF" }}
               thumbColor="#fff"
             />
@@ -404,9 +262,9 @@ export default function ProfileScreen() {
 
           {/* 빠른 선택 칩 */}
           <View style={styles.quickChips}>
-            {[{ h: 6, m: 0 }, { h: 7, m: 0 }, { h: 7, m: 30 }, { h: 8, m: 0 }].map(({ h, m }) => {
+            {alarmPresets.map(({ h, m }) => {
               const active = alarmHour === h && alarmMin === m && alarmOn;
-              const lbl = `${h < 12 ? "오전" : "오후"} ${h > 12 ? h - 12 : h}:${String(m).padStart(2, "0")}`;
+              const lbl = fmtPreset(h, m);
               return (
                 <Pressable
                   key={lbl}
@@ -420,11 +278,18 @@ export default function ProfileScreen() {
                     setAlarm(h, m);
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   }}
+                  onLongPress={() => onPresetLongPress({ h, m })}
                 >
                   <Text style={[styles.quickChipText, { color: active ? "#1E203C" : colors.mutedForeground }]}>{lbl}</Text>
                 </Pressable>
               );
             })}
+            <Pressable
+              style={[styles.quickChip, { backgroundColor: colors.surface, borderColor: colors.border, borderStyle: "dashed" }]}
+              onPress={() => openPresetEditor("new")}
+            >
+              <Text style={[styles.quickChipText, { color: "#BBDDFF" }]}>+ 추가</Text>
+            </Pressable>
           </View>
         </View>
 
@@ -451,62 +316,175 @@ export default function ProfileScreen() {
         </Pressable>
       </ScrollView>
 
+      {/* ── 회원정보(비밀번호) 수정 모달 ── */}
+      <Modal
+        visible={userUpdatePicker}
+        transparent
+        animationType="slide"
+        onRequestClose={closeUserModal}
+      >
+        <KeyboardAvoidingView
+          style={styles.userBackdrop}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <View style={[styles.userSheet, { backgroundColor: colors.card }]}>
+            <Pressable style={styles.userCloseBtn} onPress={closeUserModal}>
+              <Feather name="x" size={22} color={colors.mutedForeground} />
+            </Pressable>
+
+            <Text style={[styles.userTitle, { color: colors.text }]}>비밀번호 변경</Text>
+
+            <Text style={[styles.userLabel, { color: colors.mutedForeground }]}>현재 비밀번호</Text>
+            <View style={[styles.inputIconWrap, { backgroundColor: colors.surface }]}>
+              <Feather name="lock" size={18} color="#BBDDFF" />
+              <TextInput
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                placeholder="현재 비밀번호 입력"
+                placeholderTextColor={colors.mutedForeground}
+                secureTextEntry
+                autoCapitalize="none"
+                style={{ flex: 1, color: colors.text }}
+              />
+            </View>
+
+            <Text style={[styles.userLabel, { color: colors.mutedForeground }]}>새 비밀번호</Text>
+            <View style={[styles.inputIconWrap, { backgroundColor: colors.surface }]}>
+              <Feather name="lock" size={18} color="#FFE082" />
+              <TextInput
+                value={newPassword}
+                onChangeText={setNewPassword}
+                placeholder="새 비밀번호"
+                placeholderTextColor={colors.mutedForeground}
+                secureTextEntry
+                autoCapitalize="none"
+                style={{ flex: 1, color: colors.text }}
+              />
+            </View>
+
+            <View style={[styles.inputIconWrap, { backgroundColor: colors.surface }]}>
+              <Feather name="shield" size={18} color="#80CBC4" />
+              <TextInput
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                placeholder="새 비밀번호 확인"
+                placeholderTextColor={colors.mutedForeground}
+                secureTextEntry
+                autoCapitalize="none"
+                style={{ flex: 1, color: colors.text }}
+              />
+            </View>
+
+            <Pressable style={styles.userSaveBtn} onPress={handleProfileUpdate}>
+              <LinearGradient colors={["#FFE082", "#FFD040"]} style={styles.userSaveGrad}>
+                <Feather name="lock" size={18} color="#1E203C" />
+                <Text style={styles.userSaveText}>저장하기</Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {/* ── 알람 시간 설정 모달 ── */}
-      <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
-        <Pressable style={styles.backdrop} onPress={() => setPickerOpen(false)} />
-        <View style={[styles.pickerSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 16 }]}>
-          <View style={[styles.handle, { backgroundColor: colors.border }]} />
-          <Text style={[styles.pickerTitle, { color: colors.text }]}>기상 알람 설정</Text>
-
-          {/* 미리보기 */}
-          <View style={[styles.pickerPreview, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.previewPeriod, { color: colors.mutedForeground }]}>{draftPeriod}</Text>
-            <Text style={[styles.previewTime, { color: "#BBDDFF" }]}>
-              {String(draftH12).padStart(2, "0")}:{String(draftMin).padStart(2, "0")}
+      <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={closePicker}>
+        <KeyboardAvoidingView
+          style={{ flex: 1, justifyContent: "flex-end" }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <Pressable style={styles.backdrop} onPress={closePicker} />
+          <View style={[styles.pickerSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 16 }]}>
+            <View style={[styles.handle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.pickerTitle, { color: colors.text }]}>
+              {editTarget === "new" ? "알람 시간 추가" : editTarget ? "알람 시간 수정" : "기상 알람 설정"}
             </Text>
-          </View>
 
-          {/* 스피너 */}
-          <View style={styles.spinnerRow}>
-            <View style={styles.spinnerWrap}>
-              <Text style={[styles.spinnerLabel, { color: colors.mutedForeground }]}>시간</Text>
-              <TimeSpinner value={draftHour} min={0} max={23} onChange={setDraftHour} />
+            {/* 미리보기 */}
+            <View style={[styles.pickerPreview, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.previewPeriod, { color: colors.mutedForeground }]}>{draftPeriod}</Text>
+              <Text style={[styles.previewTime, { color: "#BBDDFF" }]}>{previewStr}</Text>
             </View>
-            <Text style={[styles.spinnerColon, { color: "#BBDDFF" }]}>:</Text>
-            <View style={styles.spinnerWrap}>
-              <Text style={[styles.spinnerLabel, { color: colors.mutedForeground }]}>분</Text>
-              <TimeSpinner value={draftMin} min={0} max={59} onChange={setDraftMin} />
+
+            {/* 오전 / 오후 */}
+            <View style={styles.ampmRow}>
+              {[{ label: "오전", pm: false }, { label: "오후", pm: true }].map(({ label, pm }) => {
+                const active = draftPM === pm;
+                return (
+                  <Pressable
+                    key={label}
+                    style={[styles.ampmBtn, {
+                      backgroundColor: active ? "#BBDDFF" : colors.surface,
+                      borderColor: active ? "#BBDDFF" : colors.border,
+                    }]}
+                    onPress={() => { setDraftPM(pm); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  >
+                    <Text style={[styles.ampmText, { color: active ? "#1E203C" : colors.mutedForeground }]}>{label}</Text>
+                  </Pressable>
+                );
+              })}
             </View>
-          </View>
 
-          {/* 빠른 선택 */}
-          <View style={styles.quickRow}>
-            {[{ h: 6, m: 0 }, { h: 7, m: 0 }, { h: 7, m: 30 }, { h: 8, m: 0 }].map(({ h, m }) => {
-              const active = draftHour === h && draftMin === m;
-              const lbl = `${h < 12 ? "오전" : "오후"} ${h}:${String(m).padStart(2, "0")}`;
-              return (
-                <Pressable
-                  key={lbl}
-                  style={[styles.quickBtn, {
-                    backgroundColor: active ? "#BBDDFF" : colors.surface,
-                    borderColor: active ? "#BBDDFF" : colors.border,
-                  }]}
-                  onPress={() => { setDraftHour(h); setDraftMin(m); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-                >
-                  <Text style={[styles.quickBtnText, { color: active ? "#1E203C" : colors.mutedForeground }]}>{lbl}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
+            {/* 시간 직접 입력 */}
+            <View style={styles.timeInputRow}>
+              <View style={styles.spinnerWrap}>
+                <Text style={[styles.spinnerLabel, { color: colors.mutedForeground }]}>시 (1~12)</Text>
+                <TextInput
+                  value={hourText}
+                  onChangeText={(t) => setHourText(t.replace(/[^0-9]/g, "").slice(0, 2))}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                  selectTextOnFocus
+                  placeholder="07"
+                  placeholderTextColor={colors.mutedForeground}
+                  style={[styles.timeInput, { backgroundColor: colors.surface, color: "#BBDDFF" }]}
+                />
+              </View>
+              <Text style={[styles.spinnerColon, { color: "#BBDDFF" }]}>:</Text>
+              <View style={styles.spinnerWrap}>
+                <Text style={[styles.spinnerLabel, { color: colors.mutedForeground }]}>분 (0~59)</Text>
+                <TextInput
+                  value={minText}
+                  onChangeText={(t) => setMinText(t.replace(/[^0-9]/g, "").slice(0, 2))}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                  selectTextOnFocus
+                  placeholder="00"
+                  placeholderTextColor={colors.mutedForeground}
+                  style={[styles.timeInput, { backgroundColor: colors.surface, color: "#BBDDFF" }]}
+                />
+              </View>
+            </View>
 
-          {/* 확인 */}
-          <Pressable style={styles.confirmBtn} onPress={confirmAlarm}>
-            <LinearGradient colors={["#FFE082", "#FFD040"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.confirmGrad}>
-              <Feather name="bell" size={18} color="#1E203C" />
-              <Text style={styles.confirmText}>알람 설정 완료</Text>
-            </LinearGradient>
-          </Pressable>
-        </View>
+            {/* 빠른 선택 */}
+            <View style={styles.quickRow}>
+              {[{ h: 6, m: 0 }, { h: 7, m: 0 }, { h: 7, m: 30 }, { h: 8, m: 0 }].map(({ h, m }) => {
+                const active = parsed?.h === h && parsed?.m === m;
+                const lbl = fmtPreset(h, m);
+                return (
+                  <Pressable
+                    key={lbl}
+                    style={[styles.quickBtn, {
+                      backgroundColor: active ? "#BBDDFF" : colors.surface,
+                      borderColor: active ? "#BBDDFF" : colors.border,
+                    }]}
+                    onPress={() => { loadDraft(h, m); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  >
+                    <Text style={[styles.quickBtnText, { color: active ? "#1E203C" : colors.mutedForeground }]}>{lbl}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* 확인 */}
+            <Pressable style={styles.confirmBtn} onPress={confirmAlarm}>
+              <LinearGradient colors={["#FFE082", "#FFD040"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.confirmGrad}>
+                <Feather name="bell" size={18} color="#1E203C" />
+                <Text style={styles.confirmText}>
+                  {editTarget === "new" ? "추가하기" : "알람 설정 완료"}
+                </Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -559,16 +537,21 @@ const styles = StyleSheet.create({
   pickerPreview: { borderRadius: 16, padding: 14, alignItems: "center", gap: 2 },
   previewPeriod: { fontSize: 13 },
   previewTime: { fontSize: 40, fontWeight: "700", letterSpacing: 2 },
-  spinnerRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 16 },
   spinnerWrap: { alignItems: "center", gap: 8 },
   spinnerLabel: { fontSize: 12, fontWeight: "600" },
   spinnerColon: { fontSize: 40, fontWeight: "700", marginTop: 20 },
+  ampmRow: { flexDirection: "row", gap: 10, justifyContent: "center" },
+  ampmBtn: { flex: 1, borderRadius: 14, borderWidth: 1, paddingVertical: 12, alignItems: "center" },
+  ampmText: { fontSize: 15, fontWeight: "700" },
+  timeInputRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 16 },
+  timeInput: { width: 96, height: 80, borderRadius: 20, fontSize: 40, fontWeight: "800", textAlign: "center" },
   quickRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
   quickBtn: { borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 8 },
   quickBtnText: { fontSize: 12, fontWeight: "600" },
   confirmBtn: { borderRadius: 16, overflow: "hidden" },
   confirmGrad: { paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 },
   confirmText: { color: "#1E203C", fontSize: 16, fontWeight: "800" },
+
   userSheet: {
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
@@ -577,58 +560,13 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     gap: 12,
   },
-
-  userTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 10,
-  },
-
-  userLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-
-  userInput: {
-    height: 54,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    fontSize: 15,
-  },
-
-  userSaveBtn: {
-    borderRadius: 16,
-    overflow: "hidden",
-    marginTop: 12,
-  },
-
-  userSaveGrad: {
-    paddingVertical: 16,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-  },
-
-  userSaveText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#1E203C",
-  },
-
-  userCloseBtn: {
-    position: "absolute",
-    right: 20,
-    top: 20,
-  },
-
-  userBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.65)",
-    justifyContent: "flex-end",
-  },
-
+  userTitle: { fontSize: 20, fontWeight: "700", textAlign: "center", marginBottom: 10 },
+  userLabel: { fontSize: 13, fontWeight: "600" },
+  userSaveBtn: { borderRadius: 16, overflow: "hidden", marginTop: 12 },
+  userSaveGrad: { paddingVertical: 16, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8 },
+  userSaveText: { fontSize: 16, fontWeight: "700", color: "#1E203C" },
+  userCloseBtn: { position: "absolute", right: 20, top: 20 },
+  userBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "flex-end" },
   inputIconWrap: {
     flexDirection: "row",
     alignItems: "center",
