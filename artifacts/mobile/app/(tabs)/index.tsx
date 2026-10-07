@@ -21,6 +21,7 @@ import { RemGraph } from "@/components/RemGraph";
 import { EnvModal, EnvType } from "@/components/EnvModal";
 import { SnorePredictionTile } from "@/components/SnorePredictionTile";
 import { localDateKey, previousDateKey } from "@/lib/snorePrediction";
+import { AccountDataNotice } from "@/components/AccountDataNotice";
 
 const DAYS_KR = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -67,7 +68,7 @@ export default function HomeScreen() {
 
 
   const scoreColor =
-    !lastRecord ? colors.mutedForeground
+    !lastRecord || lastRecord.scoreAvailable === false ? colors.mutedForeground
       : lastRecord.score >= 80 ? "#4CAF50"
         : lastRecord.score >= 60 ? "#FFE082"
           : "#EF5350";
@@ -100,7 +101,7 @@ export default function HomeScreen() {
             </View>
           </View>
           <View style={[styles.scoreBadge, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.scoreNum, { color: scoreColor }]}>{lastRecord?.score ?? "--"}</Text>
+            <Text style={[styles.scoreNum, { color: scoreColor }]}>{lastRecord?.scoreAvailable === false ? "--" : lastRecord?.score ?? "--"}</Text>
             <Text style={[styles.scoreLabel, { color: colors.mutedForeground }]}>수면점수</Text>
           </View>
         </View>
@@ -176,6 +177,7 @@ export default function HomeScreen() {
 
       {/* ── 바디 — flex로 남은 공간 채움 ── */}
       <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.body, { paddingBottom: tabBarHeight + 90 }]} showsVerticalScrollIndicator={false}>
+        <AccountDataNotice />
 
         {/* 지난 수면 요약 */}
         <View style={[styles.card, { backgroundColor: colors.card }]}>
@@ -242,13 +244,13 @@ export default function HomeScreen() {
             <Feather name="activity" size={13} color="#7C6AFA" />
             <Text style={[styles.cardTitle, { color: colors.text }]}>렘수면 분석</Text>
           </View>
-          {weeklyRecords.length >= 2 ? (
+          {weeklyRecords.length > 0 ? (
             <RemGraph records={weeklyRecords} compact />
           ) : (
             <View style={styles.emptyGraph}>
               <Feather name="bar-chart-2" size={24} color={colors.muted} />
               <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-                수면 기록 2개 이상이면 표시됩니다
+                저장된 수면 기록이 없습니다
               </Text>
             </View>
           )}

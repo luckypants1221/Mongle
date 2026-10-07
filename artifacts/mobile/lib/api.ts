@@ -1,6 +1,5 @@
-import Constants from "expo-constants";
-import { Platform } from "react-native";
-
+import { identityId, identityRow, normalizeUser, parseAccountRecords, requireAccountId } from "./accountData";
+import { apiAccountVersion, loginApi, loginProfileApi, setApiAccount, signupApi, changePasswordApi, profileApi, updateProfileApi, getSleepInfoApi, createSleepInfoApi, updateSleepInfoApi } from "../services/authApi";
 export interface User {
   id: string;
   name: string;
@@ -8,6 +7,8 @@ export interface User {
 }
 
 export interface SleepRecord {
+  userId?: string;
+  sleepStages?: SleepStageSegment[];
   id: string;
   date: string;
   startTime: string;
@@ -22,6 +23,8 @@ export interface SleepRecord {
   memo?: string;
   createdAt?: string;
 }
+
+export type SleepStageSegment = { stage: "awake" | "light" | "rem" | "deep"; durationMinutes: number };
 
 export interface AlarmSettings {
   hour: number;
@@ -41,282 +44,48 @@ export type ChangePasswordInput = {
   new_pwd: string;
 };
 
-interface AuthResponse {
-  user?: User;
-  token?: string;
-  id?: string;
-  user_id?: string | number;
-  userId?: string;
-  user_name?: string;
-  name?: string;
-  email?: string;
-  message?: string;
-}
-
-interface SleepRecordResponse {
-  id?: string | number;
-  sleep_id?: string | number;
-  record_id?: string | number;
-  day?: string;
-  date?: string;
-  sleep_score?: number;
-  score?: number;
-  start_sleep?: string;
-  startTime?: string;
-  end_sleep?: string;
-  endTime?: string;
-  temp_avg?: number;
-  temperature?: number;
-  hum_avg?: number;
-  humidity?: number;
-  duration?: number;
-  durationMinutes?: number;
-  snoring_count?: number;
-  snoringCount?: number;
-  audio_path?: string;
-  audioPath?: string;
-  memo?: string;
-  created_at?: string;
-  createdAt?: string;
-}
-
-const defaultApiUrl = Platform.select({
-  android: "http://13.125.10.228",
-  default: "http://13.125.10.228",
-});
-
-const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_BASE_URL ??
-  Constants.expoConfig?.extra?.apiBaseUrl ??
-  defaultApiUrl;
-
-let authToken: string | null = null;
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-      ...init?.headers,
-    },
-  });
-
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Request failed with ${response.status}`);
-  }
-
-  const text = await response.text();
-  if (!text) return {} as T;
-
-  return JSON.parse(text) as T;
-}
-
-function normalizeAuthResponse(data: AuthResponse): User {
-  if (data.message?.toLowerCase().includes("fail")) {
-    throw new Error(data.message);
-  }
-
-  if (data.token) authToken = data.token;
-  const user = (data.user ?? data) as AuthResponse;
-  const id = user.id ?? user.user_id ?? user.userId;
-  const name = user.name ?? user.user_name;
-
-  if (!id || !name || !user.email) {
-    throw new Error("Auth response must include user id, name and email");
-  }
-
-  return {
-    id: String(id),
-    name,
-    email: user.email,
-  };
-}
-
-function toDate(value?: string) {
-  if (!value) return "";
-  const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().split("T")[0];
-  return value.split("T")[0];
-}
-
-function toTime(value?: string) {
-  if (!value) return "";
-  const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) return parsed.toTimeString().slice(0, 5);
-  return value.includes("T") ? value.split("T")[1]?.slice(0, 5) ?? "" : value.slice(0, 5);
-}
-
-function normalizeSleepRecords(data: unknown): SleepRecord[] {
-  const records = Array.isArray(data)
-    ? data
-    : typeof data === "object" && data !== null && Array.isArray((data as { value?: unknown }).value)
-      ? (data as { value: unknown[] }).value
-      : typeof data === "object" && data !== null && Array.isArray((data as { records?: unknown }).records)
-        ? (data as { records: unknown[] }).records
-        : typeof data === "object" && data !== null && Array.isArray((data as { sleep_records?: unknown }).sleep_records)
-          ? (data as { sleep_records: unknown[] }).sleep_records
-          : [];
-
-  const normalized = records.map((item, index) => {
-    const record = item as SleepRecordResponse;
-    const start = record.start_sleep ?? record.startTime;
-    const end = record.end_sleep ?? record.endTime;
-    const date = toDate(record.day ?? record.date ?? start);
-
-    return {
-      id: String(record.sleep_id ?? record.record_id ?? `${date}-${index}`),
-      date,
-      startTime: toTime(start),
-      endTime: toTime(end),
-      durationMinutes: Math.round(Number(record.durationMinutes ?? record.duration ?? 0)),
-      score: Number(record.score ?? record.sleep_score ?? 0),
-      temperature: record.temperature ?? record.temp_avg,
-      humidity: record.humidity ?? record.hum_avg,
-      snoringCount: Number(record.snoringCount ?? record.snoring_count ?? 0),
-      audioPath: record.audioPath ?? record.audio_path ?? "",
-      memo: record.memo ?? "",
-      createdAt: record.createdAt ?? record.created_at,
-    };
-  });
-
-  return dedupeSleepRecords(normalized);
-}
-
-function dedupeSleepRecords(records: SleepRecord[]) {
-  const byDate = new Map<string, SleepRecord>();
-
-  records.forEach((record) => {
-    byDate.set(record.date, record);
-  });
-
-  return Array.from(byDate.values());
-}
-
-function toApiDateTime(date: string, time: string) {
-  if (time.includes("T")) return new Date(time).toISOString();
-  const normalizedTime = time.length === 5 ? `${time}:00` : time;
-  return new Date(`${date}T${normalizedTime}`).toISOString();
-}
-
-function buildSleepRecordRequest(userId: string, record: Omit<SleepRecord, "id">) {
-  return {
-    id: Number(userId),
-    sleep_score: record.score,
-    start_sleep: toApiDateTime(record.date, record.startTime),
-    end_sleep: toApiDateTime(record.date, record.endTime),
-    temp_avg: Math.round(record.temperature ?? 0),
-    hum_avg: Math.round(record.humidity ?? 0),
-    audio_path: "",
-    duration: record.durationMinutes,
-    snoring_count: Math.round(record.snoringCount ?? 0),
-    memo: record.memo ?? "",
-  };
-}
-
-function normalizeCreatedSleepRecord(data: unknown, fallback: SleepRecord): SleepRecord {
-  const records = normalizeSleepRecords([data]);
-  return records[0]?.date ? records[0] : fallback;
-}
-
+// Compatibility facade: all callers share the same validated account API.
 export const api = {
   async login(email: string, pwd: string) {
-    const data = await request<AuthResponse>("/login", {
-      method: "POST",
-      body: JSON.stringify({ name: "test", email, pwd }),
-    });
-    return normalizeAuthResponse({ ...data, email });
+    setApiAccount(null);
+    const version = apiAccountVersion();
+    const response = await loginApi(email, pwd);
+    if (response.data?.message !== "login success") throw new Error("로그인에 실패했습니다.");
+    const identity = identityRow(response.data);
+    const id = identityId(identity);
+    const profile = typeof identity.email === "string" && Boolean(identity.name ?? identity.user_name) ? identity : { ...identity, ...identityRow((await loginProfileApi(id)).data) };
+    const user = normalizeUser(profile, email, id);
+    if (version !== apiAccountVersion()) throw new Error("다른 로그인 요청으로 이전 응답을 폐기했습니다.");
+    setApiAccount(user.id);
+    return user;
   },
-
-  async register(data: RegisterInput) {
-    const response = await request<AuthResponse>("/signup", {
-      method: "POST",
-      body: JSON.stringify({
-        name: data.name,
-        email: data.email,
-        pwd: data.pwd,
-      }),
-    });
-    return normalizeAuthResponse({
-      ...response,
-      name: response.name ?? response.user_name ?? data.name,
-      email: response.email ?? data.email,
-    });
-  },
-
-  async changePassword(data: ChangePasswordInput) {
-    await request<unknown>("/changepw", {
-      method: "POST",
-      body: JSON.stringify({
-        email: data.email,
-        pwd: data.pwd,
-        new_pwd: data.new_pwd,
-      }),
-    });
-  },
-
-  logout() {
-    authToken = null;
-  },
-
+  async register(data: RegisterInput) { await signupApi(data.name, data.email, data.pwd); },
+  async changePassword(data: ChangePasswordInput) { await changePasswordApi(data.email, data.pwd, data.new_pwd); },
+  logout() { setApiAccount(null); },
   async updateUser(userId: string, data: User) {
-    const response = await request<AuthResponse>(`/profile/${encodeURIComponent(userId)}`, {
-      method: "PUT",
-      body: JSON.stringify({
-        user_id: Number(userId),
-        email: data.email,
-        name: data.name,
-      }),
-    });
-    return normalizeAuthResponse({
-      ...data,
-      ...response,
-      id: String(response.id ?? response.user_id ?? response.userId ?? data.id),
-      name: response.name ?? response.user?.name ?? response.user_name ?? data.name,
-      email: response.email ?? response.user?.email ?? data.email,
-    });
+    await updateProfileApi(requireAccountId(userId), data.name, data.email);
+    return normalizeUser((await profileApi(userId)).data, data.email, userId);
   },
-
-  async getSleepRecords(userId: string) {
-    const data = await request<unknown>(`/sleepinfo?id=${encodeURIComponent(userId)}`);
-    return normalizeSleepRecords(data);
-  },
-
+  async getSleepRecords(userId: string) { return parseAccountRecords((await getSleepInfoApi(userId)).data, userId).records; },
   async createSleepRecord(userId: string, record: Omit<SleepRecord, "id">) {
-    const fallback = {
-      ...record,
-      id: `${userId}-${record.date}`,
-    };
-    const response = await request<unknown>("/sleepinfo", {
-      method: "POST",
-      body: JSON.stringify(buildSleepRecordRequest(userId, record)),
-    });
-    return normalizeCreatedSleepRecord(response, fallback);
+    const id = requireAccountId(userId);
+    await createSleepInfoApi(recordPayload(id, record));
+    return (await this.getSleepRecords(id)).find(item => item.date === record.date) ?? null;
   },
-
   async updateSleepRecord(userId: string, recordId: string, data: Partial<SleepRecord>) {
-    const current = {
-      id: recordId,
-      date: data.date ?? new Date().toISOString().split("T")[0],
-      startTime: data.startTime ?? "00:00",
-      endTime: data.endTime ?? "00:00",
-      durationMinutes: data.durationMinutes ?? 0,
-      score: data.score ?? 0,
-      temperature: data.temperature,
-      humidity: data.humidity,
-      snoringCount: data.snoringCount ?? 0,
-      audioPath: data.audioPath ?? "",
-      memo: data.memo ?? "",
-    };
-    return this.createSleepRecord(userId, current);
+    const current = (await this.getSleepRecords(userId)).find(item => item.id === recordId);
+    if (!current) throw new Error("현재 계정의 기록이 없습니다.");
+    await updateSleepInfoApi(recordPayload(userId, { ...current, ...data, userId: requireAccountId(userId) }));
+    return (await this.getSleepRecords(userId)).find(item => item.id === recordId) ?? null;
   },
-
-  async getAlarm(_userId: string) {
-    return { hour: 7, min: 0, on: true };
-  },
-
-  async updateAlarm(_userId: string, data: AlarmSettings) {
-    return data;
-  },
+  // Alarm preferences have no server endpoint; they are local settings.
+  async getAlarm(_userId: string) { return { hour: 7, min: 0, on: true }; },
+  async updateAlarm(_userId: string, data: AlarmSettings) { return data; },
 };
+function recordPayload(userId: string, record: Omit<SleepRecord, "id">) {
+  if (record.userId !== requireAccountId(userId) || record.scoreAvailable === false || record.temperature === undefined || record.humidity === undefined || record.snoringCount === undefined) throw new Error("계정 또는 실제 기록값이 없습니다.");
+  const start = new Date(`${record.date}T${record.startTime}:00`);
+  const end = new Date(`${record.date}T${record.endTime}:00`);
+  if (end < start) end.setDate(end.getDate() + 1);
+  return { id: Number(userId), sleep_score: record.score, start_sleep: start.toISOString(), end_sleep: end.toISOString(), temp_avg: Math.round(record.temperature), hum_avg: Math.round(record.humidity), duration: record.durationMinutes, snoring_count: record.snoringCount, audio_path: record.audioPath ?? "", memo: record.memo ?? "" };
+}

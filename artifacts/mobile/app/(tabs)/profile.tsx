@@ -118,6 +118,11 @@ export default function ProfileScreen() {
   }
 
   async function handleLogout() {
+    if (Platform.OS === "web") {
+      await logout();
+      router.replace("/(auth)/login");
+      return;
+    }
     Alert.alert("로그아웃", "정말 로그아웃 하시겠습니까?", [
       { text: "취소", style: "cancel" },
       {
@@ -165,8 +170,6 @@ export default function ProfileScreen() {
       return;
     }
     console.log("email:", currentUser.email);
-    console.log("currentPassword:", currentPassword);
-    console.log("newPassword:", newPassword);
 
     if (!currentPassword.trim()) {
       Alert.alert(
@@ -423,7 +426,7 @@ export default function ProfileScreen() {
                 label: "한 달 평균 수면",
                 value:
                   monthlyAverageDuration > 0
-                    ? `${monthlyAverageDuration}h`
+                    ? `${Math.floor(monthlyAverageDuration / 60)}h ${monthlyAverageDuration % 60}m`
                     : "-",
                 icon: "moon" as const,
                 color: "#FFE082",
@@ -432,7 +435,7 @@ export default function ProfileScreen() {
               {
                 label: "한 달 평균 점수",
                 value:
-                  monthlyAverageScore > 0
+                  monthlyAverageScore !== null
                     ? `${monthlyAverageScore}점`
                     : "-",
                 icon: "award" as const,

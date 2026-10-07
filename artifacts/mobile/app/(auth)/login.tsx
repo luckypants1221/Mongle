@@ -164,8 +164,10 @@ export default function LoginScreen() {
               <Pressable
                 key={label}
                 style={[styles.socialBtn, { backgroundColor: bg }]}
-                onPress={() =>
-                  router.replace("/(tabs)")}
+                onPress={() => {
+                  setLoginError("SNS 로그인은 준비 중입니다. 이메일과 비밀번호로 로그인해주세요.");
+                  Alert.alert("알림", "SNS 로그인은 준비 중입니다. 이메일로 로그인해주세요.");
+                }}
               >
                 <Text style={[styles.socialLabel, { color: text }]}>{label}</Text>
               </Pressable>

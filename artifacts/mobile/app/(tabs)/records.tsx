@@ -15,6 +15,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSleep } from "@/context/SleepContext";
 import { useColors } from "@/hooks/useColors";
 import { useTabBarHeight } from "@/hooks/useTabBarHeight";
+import { AccountDataNotice } from "@/components/AccountDataNotice";
+import { localDateKey } from "@/lib/snorePrediction";
 
 const DAYS_KR = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -34,7 +36,7 @@ export default function RecordsScreen() {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
-  const [selectedDate, setSelectedDate] = useState(today.toISOString().split("T")[0]);
+  const [selectedDate, setSelectedDate] = useState(localDateKey(today));
   const [memoText, setMemoText] = useState("");
   const [editingMemo, setEditingMemo] = useState(false);
 
@@ -58,9 +60,11 @@ export default function RecordsScreen() {
 
   async function saveMemo() {
     if (!selectedRecord) return;
-    await updateMemo(selectedRecord.id, memoText);
-    setEditingMemo(false);
-    Alert.alert("저장", "메모가 저장되었습니다.");
+    try {
+      await updateMemo(selectedRecord.id, memoText);
+      setEditingMemo(false);
+      Alert.alert("저장", "메모가 저장되었습니다.");
+    } catch { Alert.alert("저장 실패", "현재 계정의 기록과 서버 연결을 확인해주세요."); }
   }
 
   function scoreColor(s: number) {
@@ -79,6 +83,7 @@ export default function RecordsScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        <AccountDataNotice />
         {/* 상단 요약 — 총 측정 횟수 제거 */}
         <LinearGradient colors={["#252848", "#1E203C"]} style={styles.topSection}>
           <Text style={styles.pageTitle}>수면 기록</Text>
@@ -89,14 +94,14 @@ export default function RecordsScreen() {
               <View style={[styles.statIconWrap, { backgroundColor: "#BBDDFF22" }]}>
                 <Feather name="clock" size={18} color="#BBDDFF" />
               </View>
-              <Text style={styles.statValue}>{fmtDuration(averageDuration)}</Text>
+              <Text style={styles.statValue}>{records.length ? fmtDuration(averageDuration) : "--"}</Text>
               <Text style={styles.statLabel}>평균 수면 시간</Text>
             </View>
             <View style={[styles.statCard, { backgroundColor: "rgba(187,221,255,0.06)" }]}>
               <View style={[styles.statIconWrap, { backgroundColor: "#FFE08222" }]}>
                 <Feather name="star" size={18} color="#FFE082" />
               </View>
-              <Text style={styles.statValue}>{averageScore}점</Text>
+              <Text style={styles.statValue}>{averageScore === null ? "--" : `${averageScore}점`}</Text>
               <Text style={styles.statLabel}>평균 수면 점수</Text>
             </View>
           </View>
@@ -134,7 +139,7 @@ export default function RecordsScreen() {
               const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
               const rec = getRecordByDate(dateStr);
               const isSel = dateStr === selectedDate;
-              const isToday = dateStr === today.toISOString().split("T")[0];
+              const isToday = dateStr === localDateKey(today);
               return (
                 <Pressable
                   key={dateStr}
@@ -190,7 +195,7 @@ export default function RecordsScreen() {
                 borderColor: scoreColor(selectedRecord.score),
               }]}>
                 <Text style={[styles.scoreHighlightNum, { color: scoreColor(selectedRecord.score) }]}>
-                  {selectedRecord.score}
+                  {selectedRecord.scoreAvailable === false ? "--" : selectedRecord.score}
                 </Text>
                 <Text style={[styles.scoreHighlightLabel, { color: scoreColor(selectedRecord.score) }]}>수면 점수</Text>
               </View>
@@ -200,7 +205,7 @@ export default function RecordsScreen() {
                   { icon: "moon" as const, label: "취침 시각", value: selectedRecord.startTime, color: "#BBDDFF" },
                   { icon: "sun" as const, label: "기상 시각", value: selectedRecord.endTime, color: "#FFE082" },
                   { icon: "clock" as const, label: "수면 시간", value: fmtDuration(selectedRecord.durationMinutes), color: "#80CBC4" },
-                  { icon: "volume-x" as const, label: "코골이 횟수", value: `${selectedRecord.snoringCount ?? 0}회`, color: "#F48FB1" },
+                  { icon: "volume-x" as const, label: "코골이 횟수", value: selectedRecord.snoringCount === undefined ? "--" : `${selectedRecord.snoringCount}회`, color: "#F48FB1" },
                   { icon: "thermometer" as const, label: "온도 / 습도", value: `${selectedRecord.temperature ?? "--"}°C / ${selectedRecord.humidity ?? "--"}%`, color: colors.mutedForeground },
                 ].map(({ icon, label, value, color }) => (
                   <View key={label} style={[styles.detailItem, { backgroundColor: colors.surface }]}>

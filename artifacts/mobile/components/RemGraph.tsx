@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
-import { Dimensions, StyleSheet, Text, View } from "react-native";
+import { useWindowDimensions, StyleSheet, Text, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
-import { SleepRecord } from "@/context/SleepContext";
+import type { SleepRecord, SleepStageSegment } from "@/lib/api";
 
 interface Props {
   records: SleepRecord[];
@@ -24,39 +24,6 @@ const STAGE_ROW: Record<Stage, number> = {
   deep:  3,
 };
 
-function generateHypnogram(durationMin: number): Stage[] {
-  const segMin = 5;
-  const n = Math.max(1, Math.round(durationMin / segMin));
-
-  const pattern: [number, Stage][] = [
-    [0.00, "light"],
-    [0.05, "deep"],
-    [0.18, "light"],
-    [0.24, "rem"],
-    [0.30, "light"],
-    [0.36, "deep"],
-    [0.48, "light"],
-    [0.54, "rem"],
-    [0.62, "light"],
-    [0.68, "deep"],
-    [0.73, "light"],
-    [0.78, "rem"],
-    [0.87, "light"],
-    [0.92, "rem"],
-    [0.97, "light"],
-    [0.995, "awake"],
-  ];
-
-  return Array.from({ length: n }, (_, i) => {
-    const t = i / n;
-    let stage: Stage = "light";
-    for (let j = pattern.length - 1; j >= 0; j--) {
-      if (t >= pattern[j][0]) { stage = pattern[j][1]; break; }
-    }
-    return stage;
-  });
-}
-
 function fmtTime(startHour: number, startMin: number, addMin: number) {
   const total = startHour * 60 + startMin + addMin;
   const h = Math.floor(total / 60) % 24;
@@ -64,21 +31,14 @@ function fmtTime(startHour: number, startMin: number, addMin: number) {
   return `${h}:${m.toString().padStart(2, "0")}`;
 }
 
-function stageSummary(segs: Stage[], durationMin: number) {
+function stageSummary(segs: SleepStageSegment[]) {
   const counts: Record<Stage, number> = { awake: 0, light: 0, rem: 0, deep: 0 };
-  segs.forEach((s) => counts[s]++);
-  const perSeg = durationMin / segs.length;
-  return {
-    awake: Math.round(counts.awake * perSeg),
-    light: Math.round(counts.light * perSeg),
-    rem:   Math.round(counts.rem * perSeg),
-    deep:  Math.round(counts.deep * perSeg),
-  };
+  segs.forEach(segment => { counts[segment.stage] += segment.durationMinutes; });
+  return { awake: Math.round(counts.awake), light: Math.round(counts.light), rem: Math.round(counts.rem), deep: Math.round(counts.deep) };
 }
-
 export function RemGraph({ records, compact }: Props) {
   const colors = useColors();
-  const screenW = Dimensions.get("window").width;
+  const { width: screenW } = useWindowDimensions();
   const chartW = screenW - 96;
   const ROW_H = compact ? 20 : 26;
   const ROWS = 4;
@@ -87,10 +47,10 @@ export function RemGraph({ records, compact }: Props) {
   const latest = [...records].filter((r) => r.durationMinutes > 0).at(-1);
 
   const { segments, summary, startH, startM, endLabel, xTicks } = useMemo(() => {
-    if (!latest) return { segments: [], summary: null, startH: 22, startM: 0, endLabel: "", xTicks: [] };
+    if (!latest || !latest.startTime) return { segments: [], summary: null, startH: 0, startM: 0, endLabel: "", xTicks: [] };
     const dur = latest.durationMinutes;
-    const segs = generateHypnogram(dur);
-    const sum = stageSummary(segs, dur);
+    const segs = latest.sleepStages ?? [];
+    const sum = stageSummary(segs);
 
     const bedH = latest.startTime
       ? parseInt(latest.startTime.split(":")[0], 10)
@@ -110,11 +70,11 @@ export function RemGraph({ records, compact }: Props) {
     return { segments: segs, summary: sum, startH: bedH, startM: bedM, endLabel: end, xTicks: ticks };
   }, [latest]);
 
-  if (!latest) {
+  if (!latest || !segments.length) {
     return (
       <View style={[styles.empty, { height: chartH + 60 }]}>
         <Text style={{ color: colors.mutedForeground, fontSize: 12, textAlign: "center" }}>
-          수면 기록이 있으면 분석이 표시됩니다
+          서버에서 수면 단계 데이터를 제공하지 않았어요
         </Text>
       </View>
     );
@@ -177,8 +137,11 @@ export function RemGraph({ records, compact }: Props) {
             ))}
 
             {/* 수면 단계 블록 */}
-            {segments.map((stage, i) => {
-              const blockW = chartW / segments.length;
+            {segments.map((segment, i) => {
+              const totalMinutes = segments.reduce((sum, item) => sum + item.durationMinutes, 0);
+              const blockW = chartW * segment.durationMinutes / totalMinutes;
+              const blockLeft = chartW * segments.slice(0, i).reduce((sum, item) => sum + item.durationMinutes, 0) / totalMinutes;
+              const stage = segment.stage;
               const row = STAGE_ROW[stage];
               const cfg = STAGES.find((s) => s.key === stage)!;
               return (
@@ -186,7 +149,7 @@ export function RemGraph({ records, compact }: Props) {
                   key={i}
                   style={{
                     position: "absolute",
-                    left: i * blockW,
+                    left: blockLeft,
                     top: row * ROW_H + 2,
                     width: Math.max(blockW - 0.5, 1),
                     height: ROW_H - 4,

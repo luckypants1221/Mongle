@@ -144,8 +144,8 @@ export default function SleepScreen() {
           {[
             { icon: "moon" as const, label: "취침", value: startTime, color: "#BBDDFF" },
             { icon: "sun" as const, label: "기상 예정", value: wakeTime, color: "#FFE082" },
-            { icon: "thermometer" as const, label: "온도", value: `${activeSession.temperature}°C`, color: "#80CBC4" },
-            { icon: "droplet" as const, label: "습도", value: `${activeSession.humidity}%`, color: "#64B5F6" },
+            { icon: "thermometer" as const, label: "온도", value: activeSession.temperature === undefined ? "--" : `${activeSession.temperature}°C`, color: "#80CBC4" },
+            { icon: "droplet" as const, label: "습도", value: activeSession.humidity === undefined ? "--" : `${activeSession.humidity}%`, color: "#64B5F6" },
           ].map(({ icon, label, value, color }) => (
             <View key={label} style={[styles.infoCard, { backgroundColor: colors.card }]}>
               <View style={[styles.infoIcon, { backgroundColor: color + "20" }]}>

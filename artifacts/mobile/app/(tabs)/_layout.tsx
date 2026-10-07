@@ -1,13 +1,17 @@
 import { Feather } from "@/components/Icon";
-import { Tabs } from "expo-router";
+import { Redirect, Tabs } from "expo-router";
+import { useAuth } from "@/context/AuthContext";
 import React from "react";
 import { Platform, StyleSheet, View } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
 
 export default function TabLayout() {
+  const { user, isLoading } = useAuth();
   const colors = useColors();
   const isWeb = Platform.OS === "web";
+  if (isLoading) return <View style={{ flex: 1, backgroundColor: colors.background }} />;
+  if (!user) return <Redirect href="/(auth)/login" />;
 
   return (
     <Tabs

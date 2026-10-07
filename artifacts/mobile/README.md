@@ -2,6 +2,16 @@
 
 ## 수면 음악과 코골이 예측
 
+### 로그인 계정별 데이터
+
+- 로그인은 공용 `AuthContext.login`을 통해 처리합니다. 로그인 응답의 `id/name/email`과 `user_id/user_name` 형식을 모두 지원하고, ID는 양의 정수인지 검증합니다. 응답 이메일이 없으면 `/profile/{id}`로 로그인 이메일과 계정을 확인합니다.
+- 로그인/로그아웃 때 API의 계정 연결과 기록·측정·설문 상태를 초기화합니다. 이전 계정의 늦은 응답이나 같은 계정의 오래된 조회 응답은 폐기합니다. 기록과 센서는 현재 로그인 ID로만 요청하며, 응답에 다른 계정의 소유자 ID가 있으면 제외합니다.
+- 실제 수면 기록은 서버 조회 결과만 화면에 반영합니다. 로컬 샘플 기록, 임의 온습도, 누락된 값의 0 대체, 고정 REM 패턴을 사용하지 않습니다. 비어 있는 데이터와 조회 실패를 구분해 표시하며, 필수 센서/마이크 값이 없으면 가짜 값으로 기록을 저장하지 않습니다.
+- REM 그래프는 서버가 `sleep_stages`, `sleepStages`, `stages` 중 하나에 `{ stage: 'awake' | 'light' | 'rem' | 'deep', durationMinutes 또는 duration_minutes: 양수 }` 배열을 보낼 때만 그립니다. 현재 서버 명세에는 수면 단계 필드가 없어 이 값이 없으면 안내 문구가 표시됩니다.
+- 새로운 측정의 수면 점수는 기존 앱의 수면시간 계산식입니다. 임상 분석이나 서버의 REM 분석 점수가 아닙니다. 온습도는 현재 계정의 타임스탬프가 있는 최근 센서 측정만 사용하며, 화면에 보여주는 저장 기록은 업로드 후 다시 조회한 서버 기록입니다.
+- `modify` 등 다른 브랜치의 저장소 직접 로그인·샘플 생성 코드를 함께 유지하면 문제가 다시 생길 수 있습니다. 로그인 화면, AuthContext, SleepContext, API 모듈을 이 브랜치의 변경과 함께 반영해야 합니다.
+- 프로필의 월평균 수면 시간은 분을 시간으로 변환해 표시합니다. 420분을 420시간으로 보여주던 단위 오류도 수정했습니다.
+
 - 홈의 기존 음악 칸은 **코골이 예측**으로 변경했습니다. 오늘의 음주, 운동, 코막힘, 수면 자세에 모두 답하면 참고용 추정치를 표시합니다.
 - 전날은 기기의 현지 날짜로 계산합니다. 홈 달력에서 다른 날짜를 선택해도 예측에는 실제 전날 기록만 사용합니다. 기록 또는 점수가 없으면 임의의 점수를 만들지 않고 설문만 반영합니다.
 - 설문 응답은 현재 앱 실행 중 유지되며, 사용자가 바뀌거나 날짜가 바뀌면 초기화됩니다. 서버에 설문을 저장하는 API는 추가하지 않았습니다.
@@ -24,6 +34,7 @@
 ```sh
 pnpm install --frozen-lockfile --ignore-scripts --filter mongle-sleep-app --filter workspace
 node --test scripts/test-sleep-features.cjs
+node --test scripts/test-account-data.cjs
 node node_modules/typescript/bin/tsc -p artifacts/mobile/tsconfig.json --noEmit
 ```
 
@@ -44,7 +55,7 @@ node node_modules/expo/bin/cli start --go --lan --port 8081
 실제 API 주소는 `EXPO_PUBLIC_API_BASE_URL`로 지정할 수 있습니다. 응답이 없으면 요청은 8초 후 종료하며, 로그인 실패 안내도 화면에 표시합니다.
 
 Expo React Native로 만든 수면 측정 앱입니다.  
-프론트 앱은 REST API 서버에서 사용자, 수면 기록, 알람 설정 데이터를 가져옵니다.
+프론트 앱은 REST API 서버에서 사용자와 수면 기록을 가져옵니다. 알람 설정은 현재 앱 실행 중의 로컬 설정입니다.
 
 ## 실행 방법
 
