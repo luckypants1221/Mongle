@@ -2,7 +2,9 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
 export const ALARM_TYPE = "wake-alarm";
-export const RING_SECONDS = 60;      // 알람이 울리는 총 시간
+export const RING_SECONDS = 60;
+const ID_PREFIX = "wake-alarm-";      // 알람 알림 식별자 접두사
+const LEGACY_ID = "wake-alarm";        // 예전 버전(DAILY)에서 쓰던 식별자
 const CHAIN_INTERVAL = 10;           // 알림을 이어서 보내는 간격(초)
 const DAYS_AHEAD = 7;                // 앞으로 며칠치를 미리 예약할지 (7 x 6 = 42개, iOS 한도 64개 이내)
 
@@ -13,18 +15,23 @@ Notifications.setNotificationHandler({
         return {
             shouldShowAlert: !isAlarm,
             shouldShowBanner: !isAlarm,
-            shouldShowList: true,
+            shouldShowList: !isAlarm,
             shouldPlaySound: !isAlarm,
             shouldSetBadge: false,
         };
     },
 });
 
+// 타입 정의가 환경에 따라 달라 오류가 나는 경우가 있어서 any로 받아 안전하게 판별
+function isGranted(p: any): boolean {
+    return p?.granted === true || p?.status === "granted";
+}
+
 async function ensurePermission() {
-    const cur = await Notifications.getPermissionsAsync();
-    if (cur.granted) return true;
-    const req = await Notifications.requestPermissionsAsync();
-    return req.granted;
+    const cur: any = await Notifications.getPermissionsAsync();
+    if (isGranted(cur)) return true;
+    const req: any = await Notifications.requestPermissionsAsync();
+    return isGranted(req);
 }
 
 async function setupChannel() {
@@ -39,14 +46,28 @@ async function setupChannel() {
     });
 }
 
-/** 저장된 알람 알림 전부 취소 */
-export async function cancelWakeAlarm() {
-    const all = await Notifications.getAllScheduledNotificationsAsync();
-    await Promise.all(
-        all
-            .filter((n) => n.content.data?.type === ALARM_TYPE)
-            .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier).catch(() => { }))
+type Scheduled = Notifications.NotificationRequest;
+
+function isAlarmNotif(n: Scheduled) {
+    return (
+        n.identifier === LEGACY_ID ||
+        n.identifier.startsWith(ID_PREFIX) ||
+        n.content.data?.type === ALARM_TYPE
     );
+}
+
+function ringStartOf(n: Scheduled): number {
+    const m = n.identifier.match(/^wake-alarm-(\d+)-\d+$/);
+    if (m) return Number(m[1]);
+    return Number(n.content.data?.ringStart);
+}
+
+/**
+ * 예약된 알림 전부 취소.
+ * 이 앱은 알림을 알람에만 쓰므로, 예전 코드(SleepContext)가 예약해 둔 알림까지 한 번에 지운다.
+ */
+export async function cancelWakeAlarm() {
+    await Notifications.cancelAllScheduledNotificationsAsync();
 }
 
 /**
@@ -70,6 +91,7 @@ export async function scheduleWakeAlarm(hour: number, minute: number) {
 
         for (let i = 0; i < steps; i++) {
             await Notifications.scheduleNotificationAsync({
+                identifier: `${ID_PREFIX}${ringStart}-${i}`,
                 content: {
                     title: "기상 알람",
                     body: "일어날 시간이에요! 눌러서 알람을 끄세요 ⏰",
@@ -88,14 +110,16 @@ export async function scheduleWakeAlarm(hour: number, minute: number) {
     return true;
 }
 
-/** 알람 끄기: 지금 울리는 중인 묶음의 남은 알림을 취소하고, 표시된 알림도 지운다 */
+/** 알람 끄기: 지금 울리는 중인 묶음의 남은 알림을 취소하고, 알림창에 표시된 알림도 지운다 */
 export async function stopRingingChain() {
     const now = Date.now();
     const all = await Notifications.getAllScheduledNotificationsAsync();
     await Promise.all(
         all
-            .filter((n) => n.content.data?.type === ALARM_TYPE && Number(n.content.data?.ringStart) <= now)
+            .filter((n) => isAlarmNotif(n) && (n.identifier === LEGACY_ID || ringStartOf(n) <= now))
             .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier).catch(() => { }))
     );
     await Notifications.dismissAllNotificationsAsync().catch(() => { });
+    // 취소 직전에 막 도착한 알림까지 지우기 위해 한 번 더
+    setTimeout(() => { Notifications.dismissAllNotificationsAsync().catch(() => { }); }, 1500);
 }

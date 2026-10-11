@@ -2,6 +2,7 @@ import { Redirect } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Image, Platform, StyleSheet, Text, View } from "react-native";
 import { useAuth } from "@/context/AuthContext";
+import { useAudioPlayer } from "expo-audio";
 
 const native = Platform.OS !== "web";
 const MIN_SPLASH_MS = 2200;

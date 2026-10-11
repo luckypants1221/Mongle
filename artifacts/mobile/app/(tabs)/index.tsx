@@ -18,6 +18,7 @@ import { useColors } from "@/hooks/useColors";
 import { useTabBarHeight } from "@/hooks/useTabBarHeight";
 import { RemGraph } from "@/components/RemGraph";
 import { EnvModal, EnvType } from "@/components/EnvModal";
+import { useAudioPlayer } from "expo-audio";
 
 const DAYS_KR = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -52,6 +53,33 @@ export default function HomeScreen() {
   const [music, setMusic] = useState("none");
   const [humidity, setHumidity] = useState(55);
   const [lighting, setLighting] = useState("off");
+  const naturePlayer = useAudioPlayer(
+    require("../../assets/audio/nature.wav")
+  );
+
+  const rainPlayer = useAudioPlayer(
+    require("../../assets/audio/rain.wav")
+  );
+
+  const whiteNoisePlayer = useAudioPlayer(
+    require("../../assets/audio/white_noise.wav")
+  );
+  function handleMusicChange(value: string) {
+    naturePlayer.pause();
+    rainPlayer.pause();
+    whiteNoisePlayer.pause();
+
+    setMusic(value);
+
+    if (value === "nature") {
+      naturePlayer.play();
+    } else if (value === "rain") {
+      rainPlayer.play();
+    } else if (value === "white") {
+      whiteNoisePlayer.play();
+    }
+  }
+
 
   const today = new Date();
   // const todayStr = today.toISOString().split("T")[0];
@@ -248,7 +276,7 @@ export default function HomeScreen() {
         onClose={() => setEnvOpen(null)}
         env={{
           music, humidity, lighting,
-          setMusic, setHumidity, setLighting,
+          setMusic: handleMusicChange, setHumidity, setLighting,
         }}
       />
     </View>
