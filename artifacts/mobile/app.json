@@ -19,18 +19,16 @@
     },
     "android": {
       "backgroundColor": "#1E203C",
-      "statusBar": {
-        "backgroundColor": "#00000000",
-        "translucent": true,
-        "barStyle": "light-content"
-      },
       "permissions": [
-        "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "package": "com.sse0mi.mobile"
+    },
+    "androidStatusBar": {
+      "backgroundColor": "#00000000",
+      "translucent": true,
+      "barStyle": "light-content"
     },
     "web": {
       "favicon": "./assets/images/icon.png"

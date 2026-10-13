@@ -1,5 +1,8 @@
-import type { ActualSleepStage } from "./mongleHeartRate";
+import Constants, { ExecutionEnvironment } from "expo-constants";
+import { Platform } from "react-native";
+
 import type { HourlyHeartRate } from "./heartRateCore";
+import type { ActualSleepStage } from "./healthTypes";
 
 export interface HealthData {
     available: boolean;
@@ -9,8 +12,22 @@ export interface HealthData {
 
 const EMPTY: HealthData = { available: false, stages: [], hourly: [] };
 
+/**
+ * Health Connect contains custom Android native code and is not bundled with
+ * Expo Go. Keep it available for Android development builds, but never load it
+ * in Expo Go, on iOS, or on web.
+ */
+export function canUseHealthConnect(): boolean {
+    return (
+        Platform.OS === "android" &&
+        Constants.executionEnvironment !== ExecutionEnvironment.StoreClient
+    );
+}
+
 /** 권한 준비. 실패해도 예외를 던지지 않음 */
 export async function tryPrepareHealth(): Promise<boolean> {
+    if (!canUseHealthConnect()) return false;
+
     try {
         const mod = require("./mongleHeartRate");
         const r = await mod.ensureHealthConnectReady();
@@ -28,19 +45,21 @@ export async function tryReadHealth(
     endMs: number,
     timeoutMs = 8000,
 ): Promise<HealthData> {
-    const work = (async (): Promise<HealthData> => {
-        const mod = require("./mongleHeartRate");
-        const core = require("./heartRateCore");
-        const stages = await mod.readSleepStages(startMs, endMs);
-        const samples = await mod.readHeartRateSamples(startMs, endMs);
-        return { available: true, stages, hourly: core.aggregateHourly(samples, 3) };
-    })();
-
-    const timeout = new Promise<HealthData>((resolve) =>
-        setTimeout(() => resolve(EMPTY), timeoutMs),
-    );
+    if (!canUseHealthConnect()) return EMPTY;
 
     try {
+        const work = (async (): Promise<HealthData> => {
+            const mod = require("./mongleHeartRate");
+            const core = require("./heartRateCore");
+            const stages = await mod.readSleepStages(startMs, endMs);
+            const samples = await mod.readHeartRateSamples(startMs, endMs);
+            return { available: true, stages, hourly: core.aggregateHourly(samples, 3) };
+        })();
+
+        const timeout = new Promise<HealthData>((resolve) =>
+            setTimeout(() => resolve(EMPTY), timeoutMs),
+        );
+
         return await Promise.race([work, timeout]);
     } catch (e) {
         console.log("수면 데이터 읽기 실패:", e);

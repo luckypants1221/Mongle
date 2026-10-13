@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { Dimensions, StyleSheet, Text, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
 import { SleepRecord } from "@/context/SleepContext";
-import type { ActualSleepStage } from "../lib/mongleHeartRate";
+import type { ActualSleepStage } from "../lib/healthTypes";
 
 interface Props {
   records: SleepRecord[];

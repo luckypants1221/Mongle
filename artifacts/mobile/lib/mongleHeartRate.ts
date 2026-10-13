@@ -29,6 +29,7 @@ import {
   type HourlyHeartRate,
   type HrSample,
 } from './heartRateCore';
+import type { ActualSleepStage } from './healthTypes';
 
 // ============================ 설정 ============================
 export const HR_CONFIG = {
@@ -251,12 +252,6 @@ export async function readHeartRateSamples(startMs: number, endMs: number): Prom
   return out;
 }
 
-
-export type ActualSleepStage = {
-  startTime: string;
-  endTime: string;
-  stage: "awake" | "light" | "rem" | "deep";
-};
 
 const STAGE_MAP: Record<number, ActualSleepStage["stage"] | null> = {
   1: "awake",

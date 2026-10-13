@@ -4,9 +4,12 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
-    "start": "expo start",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
+    "start": "expo start --go",
+    "android": "expo start --go --android",
+    "ios": "expo start --go --ios",
+    "start:dev-client": "expo start --dev-client",
+    "android:dev-client": "expo run:android",
+    "ios:dev-client": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -18,6 +21,7 @@
     "@tanstack/react-query": "^5.90.21",
     "axios": "^1.17.0",
     "expo": "~54.0.37",
+    "expo-asset": "~12.0.13",
     "expo-audio": "~1.1.1",
     "expo-blur": "~15.0.8",
     "expo-build-properties": "~1.0.10",

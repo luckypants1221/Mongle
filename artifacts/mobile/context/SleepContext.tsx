@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { sleepinfoApi, saveSleepApi } from "@/services/authApi";
 // Health Connect 는 safeHealth 를 통해서만 접근 (실패해도 수면 측정에는 영향 없음)
 import { tryPrepareHealth, tryReadHealth } from "../lib/safeHealth";
-import type { ActualSleepStage } from "../lib/mongleHeartRate";
+import type { ActualSleepStage } from "../lib/healthTypes";
 
 export interface SleepRecord {
   id: string;
