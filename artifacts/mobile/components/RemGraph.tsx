@@ -2,10 +2,12 @@ import React, { useMemo } from "react";
 import { Dimensions, StyleSheet, Text, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
 import { SleepRecord } from "@/context/SleepContext";
+import type { ActualSleepStage } from "../lib/mongleHeartRate";
 
 interface Props {
   records: SleepRecord[];
   compact?: boolean;
+  stages?: ActualSleepStage[];
 }
 
 type Stage = "awake" | "light" | "rem" | "deep";
@@ -13,49 +15,18 @@ type Stage = "awake" | "light" | "rem" | "deep";
 const STAGES: { key: Stage; label: string; color: string }[] = [
   { key: "awake", label: "깨어있음", color: "#FFB74D" },
   { key: "light", label: "얕은 수면", color: "#64B5F6" },
-  { key: "rem",   label: "렘수면",   color: "#CE93D8" },
-  { key: "deep",  label: "깊은 수면", color: "#4DB6AC" },
+  { key: "rem", label: "렘수면", color: "#CE93D8" },
+  { key: "deep", label: "깊은 수면", color: "#4DB6AC" },
 ];
 
 const STAGE_ROW: Record<Stage, number> = {
   awake: 0,
   light: 1,
-  rem:   2,
-  deep:  3,
+  rem: 2,
+  deep: 3,
 };
 
-function generateHypnogram(durationMin: number): Stage[] {
-  const segMin = 5;
-  const n = Math.max(1, Math.round(durationMin / segMin));
 
-  const pattern: [number, Stage][] = [
-    [0.00, "light"],
-    [0.05, "deep"],
-    [0.18, "light"],
-    [0.24, "rem"],
-    [0.30, "light"],
-    [0.36, "deep"],
-    [0.48, "light"],
-    [0.54, "rem"],
-    [0.62, "light"],
-    [0.68, "deep"],
-    [0.73, "light"],
-    [0.78, "rem"],
-    [0.87, "light"],
-    [0.92, "rem"],
-    [0.97, "light"],
-    [0.995, "awake"],
-  ];
-
-  return Array.from({ length: n }, (_, i) => {
-    const t = i / n;
-    let stage: Stage = "light";
-    for (let j = pattern.length - 1; j >= 0; j--) {
-      if (t >= pattern[j][0]) { stage = pattern[j][1]; break; }
-    }
-    return stage;
-  });
-}
 
 function fmtTime(startHour: number, startMin: number, addMin: number) {
   const total = startHour * 60 + startMin + addMin;
@@ -64,19 +35,8 @@ function fmtTime(startHour: number, startMin: number, addMin: number) {
   return `${h}:${m.toString().padStart(2, "0")}`;
 }
 
-function stageSummary(segs: Stage[], durationMin: number) {
-  const counts: Record<Stage, number> = { awake: 0, light: 0, rem: 0, deep: 0 };
-  segs.forEach((s) => counts[s]++);
-  const perSeg = durationMin / segs.length;
-  return {
-    awake: Math.round(counts.awake * perSeg),
-    light: Math.round(counts.light * perSeg),
-    rem:   Math.round(counts.rem * perSeg),
-    deep:  Math.round(counts.deep * perSeg),
-  };
-}
 
-export function RemGraph({ records, compact }: Props) {
+export function RemGraph({ records, compact, stages }: Props) {
   const colors = useColors();
   const screenW = Dimensions.get("window").width;
   const chartW = screenW - 96;
@@ -86,11 +46,10 @@ export function RemGraph({ records, compact }: Props) {
 
   const latest = [...records].filter((r) => r.durationMinutes > 0).at(-1);
 
-  const { segments, summary, startH, startM, endLabel, xTicks } = useMemo(() => {
-    if (!latest) return { segments: [], summary: null, startH: 22, startM: 0, endLabel: "", xTicks: [] };
+  const { blocks, summary, endLabel, xTicks, hasData } = useMemo(() => {
+    if (!latest) return { blocks: [], summary: null, endLabel: "", xTicks: [], hasData: false };
+
     const dur = latest.durationMinutes;
-    const segs = generateHypnogram(dur);
-    const sum = stageSummary(segs, dur);
 
     const bedH = latest.startTime
       ? parseInt(latest.startTime.split(":")[0], 10)
@@ -101,14 +60,42 @@ export function RemGraph({ records, compact }: Props) {
 
     const end = fmtTime(bedH, bedM, dur);
 
-    const numTicks = 5;
-    const ticks = Array.from({ length: numTicks }, (_, i) => ({
-      label: fmtTime(bedH, bedM, Math.round((i / (numTicks - 1)) * dur)),
-      pct:   i / (numTicks - 1),
+    const ticks = Array.from({ length: 5 }, (_, i) => ({
+      label: fmtTime(bedH, bedM, Math.round((i / 4) * dur)),
+      pct: i / 4,
     }));
+    if (!stages || stages.length === 0) {
+      return { blocks: [], summary: null, endLabel: end, xTicks: ticks, hasData: false };
+    }
 
-    return { segments: segs, summary: sum, startH: bedH, startM: bedM, endLabel: end, xTicks: ticks };
-  }, [latest]);
+    const rangeStart = Date.parse(stages[0].startTime);
+    const rangeEnd = Date.parse(stages[stages.length - 1].endTime);
+    const totalMs = Math.max(rangeEnd - rangeStart, 1);
+
+    // ★ 고정 5분 세그먼트 대신, 실제 구간 길이 비율로 블록 계산
+    const blockList = stages.map((s) => {
+      const sMs = Date.parse(s.startTime);
+      const eMs = Date.parse(s.endTime);
+      return {
+        startPct: (sMs - rangeStart) / totalMs,
+        widthPct: Math.max((eMs - sMs) / totalMs, 0.001),
+        stage: s.stage,
+      };
+    });
+
+    const sumMin: Record<Stage, number> = { awake: 0, light: 0, rem: 0, deep: 0 };
+    stages.forEach((s) => {
+      sumMin[s.stage] += (Date.parse(s.endTime) - Date.parse(s.startTime)) / 60000;
+    });
+    const sum = {
+      awake: Math.round(sumMin.awake),
+      light: Math.round(sumMin.light),
+      rem: Math.round(sumMin.rem),
+      deep: Math.round(sumMin.deep),
+    };
+
+    return { blocks: blockList, summary: sum, endLabel: end, xTicks: ticks, hasData: true };
+  }, [latest, stages]);
 
   if (!latest) {
     return (
@@ -119,7 +106,15 @@ export function RemGraph({ records, compact }: Props) {
       </View>
     );
   }
-
+  if (!hasData) {
+    return (
+      <View style={[styles.empty, { height: chartH + 60 }]}>
+        <Text style={{ color: colors.mutedForeground, fontSize: 12, textAlign: "center" }}>
+          워치 수면 데이터를 불러오지 못했습니다{"\n"}Health Connect 연동 상태를 확인해주세요
+        </Text>
+      </View>
+    );
+  }
   return (
     <View style={styles.wrap}>
       {/* 범례 */}
@@ -177,18 +172,18 @@ export function RemGraph({ records, compact }: Props) {
             ))}
 
             {/* 수면 단계 블록 */}
-            {segments.map((stage, i) => {
-              const blockW = chartW / segments.length;
-              const row = STAGE_ROW[stage];
-              const cfg = STAGES.find((s) => s.key === stage)!;
+            {/* ★ 변경: 균등 분할 segments.map 대신 실제 비율 blocks.map */}
+            {blocks.map((b, i) => {
+              const row = STAGE_ROW[b.stage];
+              const cfg = STAGES.find((s) => s.key === b.stage)!;
               return (
                 <View
                   key={i}
                   style={{
                     position: "absolute",
-                    left: i * blockW,
+                    left: b.startPct * chartW,
                     top: row * ROW_H + 2,
-                    width: Math.max(blockW - 0.5, 1),
+                    width: Math.max(b.widthPct * chartW - 0.5, 1),
                     height: ROW_H - 4,
                     backgroundColor: cfg.color,
                     borderRadius: 2,
@@ -240,15 +235,15 @@ export function RemGraph({ records, compact }: Props) {
 }
 
 const styles = StyleSheet.create({
-  wrap:        { gap: 8 },
-  empty:       { alignItems: "center", justifyContent: "center" },
-  legend:      { flexDirection: "row", gap: 10, flexWrap: "wrap" },
-  legendItem:  { flexDirection: "row", alignItems: "center", gap: 4 },
-  legendDot:   { width: 8, height: 8, borderRadius: 4 },
+  wrap: { gap: 8 },
+  empty: { alignItems: "center", justifyContent: "center" },
+  legend: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
   legendLabel: { fontSize: 10 },
-  chartRow:    { flexDirection: "row", alignItems: "flex-start" },
-  xLabel:      { position: "absolute", fontSize: 9, width: 36, textAlign: "center" },
-  summaryRow:  {
+  chartRow: { flexDirection: "row", alignItems: "flex-start" },
+  xLabel: { position: "absolute", fontSize: 9, width: 36, textAlign: "center" },
+  summaryRow: {
     flexDirection: "row",
     justifyContent: "space-around",
     paddingTop: 10,
@@ -257,8 +252,8 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 6,
   },
-  summaryItem:  { alignItems: "center", gap: 3 },
-  summaryDot:   { width: 8, height: 8, borderRadius: 4 },
+  summaryItem: { alignItems: "center", gap: 3 },
+  summaryDot: { width: 8, height: 8, borderRadius: 4 },
   summaryLabel: { fontSize: 9 },
-  summaryTime:  { fontSize: 12, fontWeight: "700" },
+  summaryTime: { fontSize: 12, fontWeight: "700" },
 });

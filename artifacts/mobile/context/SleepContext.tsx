@@ -3,6 +3,9 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 
 import { useAuth } from "@/context/AuthContext";
 import { sleepinfoApi, saveSleepApi } from "@/services/authApi";
+// Health Connect 는 safeHealth 를 통해서만 접근 (실패해도 수면 측정에는 영향 없음)
+import { tryPrepareHealth, tryReadHealth } from "../lib/safeHealth";
+import type { ActualSleepStage } from "../lib/mongleHeartRate";
 
 export interface SleepRecord {
   id: string;
@@ -22,6 +25,8 @@ export interface SleepRecord {
 interface SleepContextType {
   records: SleepRecord[];
   activeSession: { startTime: Date; temperature: number; humidity: number } | null;
+  /** 가장 최근 수면의 워치 수면 단계 (없으면 빈 배열) → RemGraph 의 stages 로 전달 */
+  latestStages: ActualSleepStage[];
   startSleep: () => void;
   endSleep: () => Promise<SleepRecord | null>;
   updateMemo: (id: string, memo: string) => Promise<void>;
@@ -64,7 +69,9 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const userId = user?.id;
   const recordsKey = `@sleep_records:${userId}`;
+  const stagesKey = `@sleep_stages:${userId}`;
   const [records, setRecords] = useState<SleepRecord[]>([]);
+  const [latestStages, setLatestStages] = useState<ActualSleepStage[]>([]);
   const [activeSession, setActiveSession] = useState<SleepContextType["activeSession"]>(null);
   const [alarmHour, setAlarmHour] = useState(7);
   const [alarmMin, setAlarmMin] = useState(0);
@@ -82,9 +89,11 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     setActiveSession(null);
     if (!userId) {
       setRecords([]);
+      setLatestStages([]);
       return;
     }
     loadRecords(userId);
+    loadStages(userId);
     loadAlarm();
     loadAlarmPresets();
   }, [userId]);
@@ -104,6 +113,18 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
       setRecords(cached ? JSON.parse(cached) : []);
     }
   }
+
+  // 수면 단계는 서버 응답으로 덮어써지지 않도록 별도 키에 저장/복원
+  async function loadStages(id: string) {
+    try {
+      const raw = await AsyncStorage.getItem(`@sleep_stages:${id}`);
+      setLatestStages(raw ? JSON.parse(raw) : []);
+    } catch (e) {
+      console.log("수면 단계 불러오기 실패:", e);
+      setLatestStages([]);
+    }
+  }
+
   function safeDate(v: any): Date | null {
     if (!v) return null;
     const d = new Date(v);
@@ -226,6 +247,8 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
       temperature: 22 + Math.floor(Math.random() * 5),
       humidity: 50 + Math.floor(Math.random() * 20),
     });
+    // 결과를 기다리지 않음 (권한 거부/미지원이어도 수면 측정은 그대로 진행)
+    tryPrepareHealth();
   }
 
   async function updateRating(
@@ -250,15 +273,29 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
       };
     });
     setRecords(updated);
-    await AsyncStorage.setItem("@sleep_records", JSON.stringify(updated));
+    // 기존 "@sleep_records"(계정 구분 없음) → 계정별 키로 수정
+    await AsyncStorage.setItem(recordsKey, JSON.stringify(updated));
   }
 
   async function endSleep(): Promise<SleepRecord | null> {
     if (!activeSession || !userId) return null;
     const endTime = new Date();
-    const durationMinutes = Math.round((endTime.getTime() - activeSession.startTime.getTime()) / 60000);
-    const dateStr = activeSession.startTime.toISOString().split("T")[0];
+    const startMs = activeSession.startTime.getTime();
+    const endMs = endTime.getTime();
+    const durationMinutes = Math.round((endMs - startMs) / 60000);
+    // 홈 화면 달력(toLocalDateStr)과 같은 기준으로 날짜 계산 (UTC 기준이면 새벽 취침 시 하루 어긋남)
+    const dateStr = toLocalDateStr(activeSession.startTime);
     const score = Math.min(100, Math.max(40, 70 + Math.floor(durationMinutes / 10)));
+
+    // 워치 데이터: 실패/지연 시 빈 값으로 돌아오며, 아래 저장 로직은 항상 계속 진행됨
+    const health = await tryReadHealth(startMs, endMs);
+    setLatestStages(health.stages);
+    try {
+      await AsyncStorage.setItem(stagesKey, JSON.stringify(health.stages));
+    } catch (e) {
+      console.log("수면 단계 저장 실패:", e);
+    }
+
     const record: SleepRecord = {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
       date: dateStr,
@@ -296,7 +333,8 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   async function updateMemo(id: string, memo: string) {
     const updated = records.map((r) => r.id === id ? { ...r, memo } : r);
     setRecords(updated);
-    await AsyncStorage.setItem("@sleep_records", JSON.stringify(updated));
+    // 기존 "@sleep_records"(계정 구분 없음) → 계정별 키로 수정
+    await AsyncStorage.setItem(recordsKey, JSON.stringify(updated));
   }
 
   const getRecordByDate = useCallback(
@@ -312,7 +350,7 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SleepContext.Provider value={{
-      records, activeSession, startSleep, endSleep, updateMemo,
+      records, activeSession, latestStages, startSleep, endSleep, updateMemo,
       getRecordByDate, weeklyRecords, averageDuration, averageScore,
       alarmHour, alarmMin, alarmOn, setAlarm, setAlarmOn, updateRating,
       alarmPresets,
