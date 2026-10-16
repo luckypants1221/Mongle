@@ -40,9 +40,21 @@
       "expo-font",
       "expo-web-browser",
       "expo-notifications",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "수면 중 소리를 녹음하고 분석하기 위해 마이크를 사용합니다.",
+          "enableBackgroundRecording": true
+        }
+      ],
       "react-native-health-connect",
-      "expo-build-properties"
+      "expo-build-properties",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "수면 환경 조명(플래시)을 켜기 위해 카메라 접근이 필요합니다."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

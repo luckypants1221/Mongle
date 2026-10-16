@@ -44,7 +44,7 @@ export function RemGraph({ records, compact, stages }: Props) {
   const ROWS = 4;
   const chartH = ROW_H * ROWS;
 
-  const latest = [...records].filter((r) => r.durationMinutes > 0).at(-1);
+  const latest = [...records].filter((r) => r.durationMinutes > 0).sort((a, b) => (b.endIso ?? b.date).localeCompare(a.endIso ?? a.date))[0];
 
   const { blocks, summary, endLabel, xTicks, hasData } = useMemo(() => {
     if (!latest) return { blocks: [], summary: null, endLabel: "", xTicks: [], hasData: false };
@@ -68,12 +68,13 @@ export function RemGraph({ records, compact, stages }: Props) {
       return { blocks: [], summary: null, endLabel: end, xTicks: ticks, hasData: false };
     }
 
-    const rangeStart = Date.parse(stages[0].startTime);
-    const rangeEnd = Date.parse(stages[stages.length - 1].endTime);
+    const rangeStart = latest.startIso ? Date.parse(latest.startIso) : Math.min(...stages.map(s => Date.parse(s.startTime)));
+    const rangeEnd = latest.endIso ? Date.parse(latest.endIso) : Math.max(...stages.map(s => Date.parse(s.endTime)));
     const totalMs = Math.max(rangeEnd - rangeStart, 1);
 
     // ★ 고정 5분 세그먼트 대신, 실제 구간 길이 비율로 블록 계산
-    const blockList = stages.map((s) => {
+    const clipped = stages.map(s => ({ ...s, startTime: new Date(Math.max(rangeStart, Date.parse(s.startTime))).toISOString(), endTime: new Date(Math.min(rangeEnd, Date.parse(s.endTime))).toISOString() })).filter(s => Date.parse(s.endTime) > Date.parse(s.startTime));
+    const blockList = clipped.map((s) => {
       const sMs = Date.parse(s.startTime);
       const eMs = Date.parse(s.endTime);
       return {
@@ -84,7 +85,7 @@ export function RemGraph({ records, compact, stages }: Props) {
     });
 
     const sumMin: Record<Stage, number> = { awake: 0, light: 0, rem: 0, deep: 0 };
-    stages.forEach((s) => {
+    clipped.forEach((s) => {
       sumMin[s.stage] += (Date.parse(s.endTime) - Date.parse(s.startTime)) / 60000;
     });
     const sum = {

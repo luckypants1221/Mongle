@@ -30,8 +30,8 @@ export default function AlarmRinger() {
     /* ── 알림 예약 갱신 ── */
     useEffect(() => {
         if (Platform.OS === "web") return;
-        if (alarmOn) scheduleWakeAlarm(alarmHour, alarmMin);
-        else cancelWakeAlarm();
+        if (alarmOn) scheduleWakeAlarm(alarmHour, alarmMin).catch(console.warn);
+        else cancelWakeAlarm().catch(console.warn);
     }, [alarmOn, alarmHour, alarmMin]);
 
     /* ── 끄기 ── */
@@ -48,7 +48,7 @@ export default function AlarmRinger() {
     /* ── 울리기 시작 (ringStart 기준 60초가 남아 있을 때만) ── */
     const start = useCallback(async (ringStart: number) => {
         const remaining = ringStart + RING_SECONDS * 1000 - Date.now();
-        if (!ringStart || remaining <= 0 || ringingRef.current) return;
+        if (!alarmOn || !ringStart || remaining <= 0 || ringingRef.current) return;
 
         ringingRef.current = true;
         setRinging(true);
@@ -56,7 +56,7 @@ export default function AlarmRinger() {
         try {
             await setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true });
             player.loop = true;
-            player.seekTo(0);
+            await player.seekTo(0);
             player.play();
         } catch { }
 
@@ -64,7 +64,7 @@ export default function AlarmRinger() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
 
         timerRef.current = setTimeout(() => { stop(); }, remaining);
-    }, [player, stop]);
+    }, [alarmOn, player, stop]);
 
     /* ── 알림 수신(앱 켜짐) / 알림 탭 / 콜드 스타트 ── */
     useEffect(() => {

@@ -38,10 +38,23 @@ export default function RecordsScreen() {
   const [selectedDate, setSelectedDate] = useState(toLocalDateStr(today));
   const [memoText, setMemoText] = useState("");
   const [editingMemo, setEditingMemo] = useState(false);
+  const [savingMemo, setSavingMemo] = useState(false);
 
   const daysInMonth = getDaysInMonth(viewYear, viewMonth);
   const firstDay = getFirstDay(viewYear, viewMonth);
-  const selectedRecord = getRecordByDate(selectedDate);
+  const selectedRecord =
+    [...records]
+      .filter((record) => record.date === selectedDate)
+      .sort((a, b) => {
+        const aId = Number(a.id);
+        const bId = Number(b.id);
+
+        if (Number.isFinite(aId) && Number.isFinite(bId)) {
+          return bId - aId;
+        }
+
+        return (b.startIso ?? "").localeCompare(a.startIso ?? "");
+      })[0] ?? null;
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   function handleSelectDate(dateStr: string) {
@@ -52,10 +65,21 @@ export default function RecordsScreen() {
   }
 
   async function saveMemo() {
-    if (!selectedRecord) return;
-    await updateMemo(selectedRecord.id, memoText);
-    setEditingMemo(false);
-    Alert.alert("저장", "메모가 저장되었습니다.");
+    if (!selectedRecord || savingMemo) return;
+    setSavingMemo(true);
+    try {
+      await updateMemo(selectedRecord.id, memoText);
+      setEditingMemo(false);
+      Alert.alert("저장 완료", "메모가 서버에 저장되었습니다.");
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.detail;
+      Alert.alert("메모 저장 실패", status
+        ? `서버 오류 (${status}): ${typeof detail === "string" ? detail : "PUT API 주소와 요청 형식을 확인해 주세요."}`
+        : error instanceof Error ? error.message : "서버 연결을 확인해 주세요.");
+    } finally {
+      setSavingMemo(false);
+    }
   }
 
   function scoreColor(s: number) {
@@ -197,9 +221,10 @@ export default function RecordsScreen() {
                   { icon: "sun" as const, label: "기상 시각", value: selectedRecord.endTime, color: "#FFE082" },
                   { icon: "clock" as const, label: "수면 시간", value: fmtDuration(selectedRecord.durationMinutes), color: "#80CBC4" },
                   { icon: "thermometer" as const, label: "온도 / 습도", value: `${selectedRecord.temperature ?? "--"}°C / ${selectedRecord.humidity ?? "--"}%`, color: colors.mutedForeground },
+                  { icon: "activity" as const, label: "코골이 횟수", value: selectedRecord.snoringCount == null ? "분석 기록 없음" : `${selectedRecord.snoringCount}회`, color: "#BBDDFF" },
                 ].map(({ icon, label, value, color }) => (
                   <View key={label} style={[styles.detailItem, { backgroundColor: colors.surface }]}>
-                    <Feather name={icon} size={16} color={color} />
+                    <Feather name={icon as React.ComponentProps<typeof Feather>["name"]} size={16} color={color} />
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.detailItemLabel, { color: colors.mutedForeground }]}>{label}</Text>
                       <Text style={[styles.detailItemValue, { color: colors.text }]}>{value}</Text>
@@ -214,6 +239,7 @@ export default function RecordsScreen() {
                   <Feather name="edit-3" size={14} color="#FFE082" />
                   <Text style={[styles.memoTitle, { color: colors.text }]}>수면 메모</Text>
                   <Pressable
+                    disabled={savingMemo}
                     onPress={() => {
                       if (editingMemo) {
                         saveMemo();
@@ -224,7 +250,7 @@ export default function RecordsScreen() {
                     style={[styles.memoActionBtn, { backgroundColor: editingMemo ? "#FFE082" : colors.muted }]}
                   >
                     <Text style={[styles.memoActionText, { color: editingMemo ? "#1E203C" : colors.mutedForeground }]}>
-                      {editingMemo ? "저장" : "편집"}
+                      {savingMemo ? "저장 중..." : editingMemo ? "저장" : "편집"}
                     </Text>
                   </Pressable>
                 </View>

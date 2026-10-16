@@ -28,22 +28,19 @@ export async function tryReadHealth(
     endMs: number,
     timeoutMs = 8000,
 ): Promise<HealthData> {
-    const work = (async (): Promise<HealthData> => {
-        const mod = require("./mongleHeartRate");
-        const core = require("./heartRateCore");
-        const stages = await mod.readSleepStages(startMs, endMs);
-        const samples = await mod.readHeartRateSamples(startMs, endMs);
-        return { available: true, stages, hourly: core.aggregateHourly(samples, 3) };
-    })();
-
-    const timeout = new Promise<HealthData>((resolve) =>
-        setTimeout(() => resolve(EMPTY), timeoutMs),
-    );
-
+    // 수면 단계는 심박 조회 성공 여부와 독립적으로 읽는다.
+    // Health Connect 동기화가 늦을 수 있으므로 빈 결과는 호출자가 다시 조회한다.
     try {
-        return await Promise.race([work, timeout]);
+        const mod = require("./mongleHeartRate");
+        const stages = await Promise.race<ActualSleepStage[]>([
+            mod.readSleepStages(startMs, endMs),
+            new Promise<ActualSleepStage[]>((resolve) =>
+                setTimeout(() => resolve([]), timeoutMs),
+            ),
+        ]);
+        return { available: stages.length > 0, stages, hourly: [] };
     } catch (e) {
-        console.log("수면 데이터 읽기 실패:", e);
+        console.log("수면 단계 읽기 실패:", e);
         return EMPTY;
     }
 }

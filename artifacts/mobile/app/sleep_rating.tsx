@@ -4,6 +4,7 @@ import {
     Text,
     StyleSheet,
     Pressable,
+    Alert,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -12,23 +13,32 @@ import { useSleep } from "@/context/SleepContext";
 export default function SleepRatinScreen() {
     const { recordId } = useLocalSearchParams<{ recordId?: string }>();
     const { updateRating } = useSleep();
+    const [submitting, setSubmitting] = useState(false);
     const [totalRating, setTotalRating] = useState(0);
     const [tempRating, setTempRating] = useState(0);
     const [humRating, setHumRating] = useState(0);
     const canSubmit = totalRating > 0 && tempRating > 0 && humRating > 0;
 
     const handleSubmit = async () => {
-        console.log("rating submit:", { recordId, totalRating, tempRating, humRating });
-        if (recordId) {
+        if (!canSubmit || submitting) return;
+        if (!recordId) {
+            Alert.alert("저장 오류", "수면 기록 ID가 없습니다. 수면을 다시 종료해 주세요.");
+            return;
+        }
+        setSubmitting(true);
+        try {
             await updateRating(recordId, {
                 total: totalRating,
                 temp: tempRating,
                 hum: humRating,
             });
+            router.replace("/");
+        } catch (error) {
+            Alert.alert("저장 실패", error instanceof Error ? error.message : "서버 저장에 실패했습니다. 다시 시도해 주세요.");
+        } finally {
+            setSubmitting(false);
         }
-        //API 저장
-        router.replace("/");
-    }
+    };
 
     return (
         <LinearGradient
@@ -88,16 +98,16 @@ export default function SleepRatinScreen() {
                     ? `${rating}/5` : "벌점을 선택해주세요"}
             </Text> */}
             <Pressable
-                disabled={totalRating === 0 || tempRating === 0 || humRating === 0}
+                disabled={!canSubmit || submitting}
                 onPress={handleSubmit}
                 style={[
                     styles.button,
                     {
-                        opacity: canSubmit ? 1 : 0.4
+                        opacity: canSubmit && !submitting ? 1 : 0.4
                     },
                 ]}>
                 <Text style={styles.buttonText}>
-                    완료
+                    {submitting ? "저장 중..." : "완료"}
                 </Text>
             </Pressable>
 

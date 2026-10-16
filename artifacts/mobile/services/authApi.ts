@@ -38,6 +38,7 @@ export const sleepinfoApi = (
     params: { id }
   });
 
+
 //비밀번호 변경
 export const changePasswordApi = (
   id: string,
@@ -78,3 +79,21 @@ export const saveSleepApi = (data: {
   snoring_count: number;
   memo: string;
 }) => api.post("/sleepinfo", data);
+
+
+
+api.interceptors.request.use((config) => {
+  console.log("[REQ]", config.method?.toUpperCase(), (config.baseURL ?? "") + (config.url ?? ""), JSON.stringify(config.data));
+  return config;
+});
+
+api.interceptors.response.use(
+  (res) => {
+    // console.log("[RES]", res.status, res.config.url, JSON.stringify(res.data));
+    return res;
+  },
+  (err) => {
+    console.log("[ERR]", err.config?.url, err.message, err.response?.status);
+    return Promise.reject(err);
+  }
+);

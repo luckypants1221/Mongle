@@ -27,6 +27,8 @@ interface Props {
   visible: EnvType;
   onClose: () => void;
   env: EnvState;
+  recommendedHumidity?: number | null;
+  recommendedTemperature?: number | null;
 }
 
 const MUSIC_LIST = [
@@ -38,12 +40,10 @@ const MUSIC_LIST = [
 
 const LIGHTING_LIST = [
   { id: "off", label: "끄기", icon: "moon" as const, desc: "완전 암실" },
-  { id: "low", label: "낮음", icon: "sun" as const, desc: "아주 약한 조명" },
-  { id: "mid", label: "중간", icon: "sun" as const, desc: "독서등 밝기" },
-  { id: "high", label: "높음", icon: "sun" as const, desc: "밝은 환경" },
+  { id: "on", label: "켜기", icon: "sun" as const, desc: "밝은 환경" },
 ];
 
-export function EnvModal({ visible, onClose, env }: Props) {
+export function EnvModal({ visible, onClose, env, recommendedHumidity, recommendedTemperature }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const isOpen = visible !== null;
@@ -122,6 +122,37 @@ export function EnvModal({ visible, onClose, env }: Props) {
               ]}>
                 {env.humidity >= 40 && env.humidity <= 60 ? "적정 범위" : "권장: 40~60%"}
               </Text>
+            </View>
+            <View style={[styles.recommendBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              {recommendedHumidity !== null && recommendedHumidity !== undefined ? (
+                <>
+                  <View style={styles.recommendInfo}>
+                    <Text style={[styles.recommendTitle, { color: colors.text }]}>최근 30일 기록 기반 추천 습도</Text>
+                    <Text style={styles.recommendValue}>{recommendedHumidity}%</Text>
+                    <Text style={[styles.recommendHint, { color: colors.mutedForeground }]}>수면 점수가 높은 날의 평균 습도이며 최적값을 보장하지 않습니다.</Text>
+                  </View>
+                  <Pressable
+                    style={styles.recommendButton}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      env.setHumidity(Math.max(30, Math.min(70, recommendedHumidity)));
+                    }}
+                  >
+                    <Text style={styles.recommendButtonText}>적용</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <Text style={[styles.recommendHint, { color: colors.mutedForeground }]}>최근 30일간 유효한 수면 기록이 5개 이상 쌓이면 추천 습도를 표시합니다.</Text>
+              )}
+            </View>
+            <View style={[styles.recommendBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.recommendTitle, { color: colors.text }]}>최근 30일 기록 기반 추천 온도</Text>
+              {recommendedTemperature !== null && recommendedTemperature !== undefined ? (
+                <Text style={styles.recommendValue}>{recommendedTemperature}°C</Text>
+              ) : (
+                <Text style={[styles.recommendHint, { color: colors.mutedForeground }]}>유효한 온도 기록 5개 이상 필요</Text>
+              )}
+              <Text style={[styles.recommendHint, { color: colors.mutedForeground }]}>수면 점수가 높은 날의 평균 온도입니다. 온도 제어 기능은 포함되지 않습니다.</Text>
             </View>
             <View style={styles.humControls}>
               {[30, 35, 40, 45, 50, 55, 60, 65, 70].map((v) => {
@@ -233,6 +264,13 @@ const styles = StyleSheet.create({
   optionIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   optionLabel: { fontSize: 15, fontWeight: "600" },
   optionDesc: { fontSize: 12, marginTop: 2 },
+  recommendBox: { borderRadius: 14, borderWidth: 1, padding: 12, gap: 10 },
+  recommendInfo: { gap: 4 },
+  recommendTitle: { fontSize: 12, fontWeight: "600" },
+  recommendValue: { fontSize: 24, fontWeight: "800", color: "#BBDDFF" },
+  recommendHint: { fontSize: 11, lineHeight: 17 },
+  recommendButton: { alignSelf: "flex-start", backgroundColor: "#BBDDFF", borderRadius: 9, paddingVertical: 8, paddingHorizontal: 16 },
+  recommendButtonText: { fontSize: 12, fontWeight: "700", color: "#1E203C" },
   humDisplay: { alignItems: "center", borderRadius: 20, paddingVertical: 20, gap: 4 },
   humBigNum: { fontSize: 52, fontWeight: "700" },
   humLabel: { fontSize: 13 },

@@ -28,6 +28,7 @@ function isGranted(p: any): boolean {
 }
 
 async function ensurePermission() {
+    await setupChannel(); // Android 13+: 권한 요청 전에 채널이 먼저 있어야 함
     const cur: any = await Notifications.getPermissionsAsync();
     if (isGranted(cur)) return true;
     const req: any = await Notifications.requestPermissionsAsync();
@@ -44,6 +45,13 @@ async function setupChannel() {
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
         bypassDnd: true,
     });
+}
+// 예약/취소 요청을 순서대로 하나씩만 실행
+let queue: Promise<unknown> = Promise.resolve();
+function enqueue<T>(job: () => Promise<T>): Promise<T> {
+    const run = queue.then(job, job);
+    queue = run.catch(() => { });
+    return run;
 }
 
 type Scheduled = Notifications.NotificationRequest;
@@ -66,60 +74,53 @@ function ringStartOf(n: Scheduled): number {
  * 예약된 알림 전부 취소.
  * 이 앱은 알림을 알람에만 쓰므로, 예전 코드(SleepContext)가 예약해 둔 알림까지 한 번에 지운다.
  */
-export async function cancelWakeAlarm() {
-    await Notifications.cancelAllScheduledNotificationsAsync();
+export function cancelWakeAlarm() {
+    return enqueue(() => Notifications.cancelAllScheduledNotificationsAsync());
 }
 
 /**
  * 매일 hour:minute 에 시작해서 60초 동안 10초 간격으로 알림을 보낸다.
  * (앱이 꺼져 있어도 OS가 울려주는 알림 → 앱을 열면 계속 울리는 알람 화면이 뜸)
  */
-export async function scheduleWakeAlarm(hour: number, minute: number) {
-    if (!(await ensurePermission())) return false;
-    await setupChannel();
-    await cancelWakeAlarm();
 
-    const now = Date.now();
-    const steps = RING_SECONDS / CHAIN_INTERVAL;
-
-    for (let d = 0; d < DAYS_AHEAD; d++) {
-        const t = new Date();
-        t.setDate(t.getDate() + d);
-        t.setHours(hour, minute, 0, 0);
-        const ringStart = t.getTime();
-        if (ringStart <= now) continue;
-
-        for (let i = 0; i < steps; i++) {
-            await Notifications.scheduleNotificationAsync({
-                identifier: `${ID_PREFIX}${ringStart}-${i}`,
-                content: {
-                    title: "기상 알람",
-                    body: "일어날 시간이에요! 눌러서 알람을 끄세요 ⏰",
-                    sound: "default",
-                    interruptionLevel: "timeSensitive",
-                    data: { type: ALARM_TYPE, ringStart },
-                },
-                trigger: {
-                    type: Notifications.SchedulableTriggerInputTypes.DATE,
-                    date: new Date(ringStart + i * CHAIN_INTERVAL * 1000),
-                    channelId: "alarm",
-                },
-            });
+export function scheduleWakeAlarm(hour: number, minute: number) {
+    return enqueue(async () => {
+        if (!(await ensurePermission())) {
+            console.log("[ALARM] 알림 권한 없음 → 예약 안 함");
+            return false;
         }
-    }
-    return true;
-}
+        await Notifications.cancelAllScheduledNotificationsAsync();
 
-/** 알람 끄기: 지금 울리는 중인 묶음의 남은 알림을 취소하고, 알림창에 표시된 알림도 지운다 */
-export async function stopRingingChain() {
-    const now = Date.now();
-    const all = await Notifications.getAllScheduledNotificationsAsync();
-    await Promise.all(
-        all
-            .filter((n) => isAlarmNotif(n) && (n.identifier === LEGACY_ID || ringStartOf(n) <= now))
-            .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier).catch(() => { }))
-    );
-    await Notifications.dismissAllNotificationsAsync().catch(() => { });
-    // 취소 직전에 막 도착한 알림까지 지우기 위해 한 번 더
-    setTimeout(() => { Notifications.dismissAllNotificationsAsync().catch(() => { }); }, 1500);
+        const now = Date.now();
+        const steps = RING_SECONDS / CHAIN_INTERVAL;
+
+        for (let d = 0; d < DAYS_AHEAD; d++) {
+            const t = new Date();
+            t.setDate(t.getDate() + d);
+            t.setHours(hour, minute, 0, 0);
+            const ringStart = t.getTime();
+            if (ringStart <= now) continue;
+
+            for (let i = 0; i < steps; i++) {
+                await Notifications.scheduleNotificationAsync({
+                    identifier: `${ID_PREFIX}${ringStart}-${i}`,
+                    content: {
+                        title: "기상 알람",
+                        body: "일어날 시간이에요! 눌러서 알람을 끄세요 ⏰",
+                        sound: "default",
+                        interruptionLevel: "timeSensitive",
+                        data: { type: ALARM_TYPE, ringStart },
+                    },
+                    trigger: {
+                        type: Notifications.SchedulableTriggerInputTypes.DATE,
+                        date: new Date(ringStart + i * CHAIN_INTERVAL * 1000),
+                        channelId: "alarm",
+                    },
+                });
+            }
+        }
+        const list = await Notifications.getAllScheduledNotificationsAsync();
+        console.log("[ALARM] 예약 완료:", list.length, "개");
+        return true;
+    });
 }
