@@ -25,6 +25,7 @@ import { useAudioPlayer } from "expo-audio";
 import { sleepScoreColor } from "@/lib/sleepScoreColor";
 import { PreSleepSurveyModal } from "@/components/PreSleepSurveyModal";
 import { WatchHeartRateGraph } from "@/components/WatchHeartRateGraph";
+import { SnoringProbabilityBadge } from "@/components/SnoringProbabilityBadge";
 import { getHealthConnectionMessage } from "@/lib/safeHealth";
 
 const DAYS_KR = ["일", "월", "화", "수", "목", "금", "토"];
@@ -57,6 +58,8 @@ export default function HomeScreen() {
   const { records, environmentRecommendation, weeklyRecords, getRecordByDate, activeSession, startSleep, latestStages, latestHealth, refreshLatestStages } = useSleep();
   const [stageRefreshing, setStageRefreshing] = useState(false);
   const [surveyOpen, setSurveyOpen] = useState(false);
+  // Connect the backend prediction here when its API is available (0–100%).
+  const snoringProbabilityPercent: number | null = null;
 
   const [envOpen, setEnvOpen] = useState<EnvType>(null);
   const [music, setMusic] = useState("none");
@@ -169,14 +172,17 @@ export default function HomeScreen() {
           <View style={styles.headerRow}>
             <View style={styles.headerLeft}>
               <Image source={require("@/assets/images/logo_nobg.png")} style={styles.headerLogo} resizeMode="contain" />
-              <View>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.greetSmall}>안녕하세요,</Text>
-                <Text style={styles.greetName}>{user?.name ?? "사용자"}님</Text>
+                <Text style={styles.greetName} numberOfLines={1} ellipsizeMode="tail">{user?.name ?? "사용자"}님</Text>
               </View>
             </View>
-            <View style={[styles.scoreBadge, { backgroundColor: colors.surface }]}>
+            <View style={styles.headerMetrics}>
+              <SnoringProbabilityBadge probabilityPercent={snoringProbabilityPercent} />
+              <View style={[styles.scoreBadge, { backgroundColor: colors.surface }]}>
               <Text style={[styles.scoreNum, { color: scoreColor }]}>{lastRecord?.score ?? "--"}</Text>
               <Text style={[styles.scoreLabel, { color: colors.mutedForeground }]}>수면점수</Text>
+              </View>
             </View>
           </View>
 
@@ -473,6 +479,8 @@ export default function HomeScreen() {
       <EnvModal
         visible={envOpen}
         onClose={() => setEnvOpen(null)}
+        recommendedHumidity={environmentRecommendation?.humidity ?? null}
+        recommendedTemperature={environmentRecommendation?.temperature ?? null}
         env={{
           music, humidity, lighting,
           setMusic: handleMusicChange, setHumidity, setLighting: handleLightingChange,
@@ -488,7 +496,8 @@ const styles = StyleSheet.create({
   /* 헤더 */
   header: { paddingHorizontal: 18, paddingBottom: 14, gap: 12 },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 10 },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
+  headerLeft: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 10, marginRight: 10 },
+  headerMetrics: { flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 },
   headerLogo: { width: 40, height: 40 },
   greetSmall: { fontSize: 11, color: "#7A8AA6" },
   greetName: { fontSize: 17, fontWeight: "700", color: "#fff" },
