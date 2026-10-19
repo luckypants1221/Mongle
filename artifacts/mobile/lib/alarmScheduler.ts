@@ -124,3 +124,38 @@ export function scheduleWakeAlarm(hour: number, minute: number) {
         return true;
     });
 }
+/** 현재 울리는 회차의 남은 알림만 취소 */
+export async function stopRingingChain(): Promise<void> {
+    const now = Date.now();
+    const scheduled =
+        await Notifications.getAllScheduledNotificationsAsync();
+
+    for (const notification of scheduled) {
+        const data = notification.content.data;
+
+        const isAlarm =
+            data?.type === ALARM_TYPE ||
+            notification.identifier.startsWith("wake-alarm-");
+
+        if (!isAlarm) continue;
+
+        // data에 없으면 알림 식별자에서 시작 시각 추출
+        const match = notification.identifier.match(
+            /^wake-alarm-(\d+)-\d+$/
+        );
+
+        const ringStart = Number(
+            data?.ringStart ?? match?.[1]
+        );
+
+        if (
+            Number.isFinite(ringStart) &&
+            ringStart <= now &&
+            now < ringStart + RING_SECONDS * 1000
+        ) {
+            await Notifications.cancelScheduledNotificationAsync(
+                notification.identifier
+            );
+        }
+    }
+}
