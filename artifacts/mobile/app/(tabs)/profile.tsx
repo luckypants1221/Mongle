@@ -1,4 +1,4 @@
-import { Feather } from "@/components/Icon";
+import { Feather } from "../components/Icon";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";

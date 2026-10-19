@@ -297,7 +297,7 @@ function FeatherIcon({ name, size = 24, color = "#000", style }: FeatherProps) {
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      style={style as object}
+      style={style}
     >
       {renderPaths()}
     </Svg>

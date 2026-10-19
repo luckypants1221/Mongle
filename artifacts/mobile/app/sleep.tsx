@@ -1,4 +1,4 @@
-import { Feather } from "@/components/Icon";
+import { Feather } from "../components/Icon";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -13,8 +13,8 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useSleep } from "@/context/SleepContext";
-import { useColors } from "@/hooks/useColors";
+import { useSleep } from "../context/SleepContext";
+import { useColors } from "../hooks/useColors";
 
 
 function pad2(n: number) { return String(n).padStart(2, "0"); }

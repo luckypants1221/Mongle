@@ -300,6 +300,9 @@ importers:
       expo-web-browser:
         specifier: ~15.0.10
         version: 15.0.11(expo@54.0.37)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))
+      metro-runtime:
+        specifier: ^0.87.1
+        version: 0.87.1
       react:
         specifier: 19.1.0
         version: 19.1.0
@@ -4272,6 +4275,10 @@ packages:
   metro-runtime@0.83.7:
     resolution: {integrity: sha512-9GKkJURaB2iyYoEExKnedzAHzxmKtSi+k0tsZUvMoU27tBZJElchYt7JH/Ai/XzYAI9lCAaV7u5HZSI8J5Z+wQ==}
     engines: {node: '>=20.19.4'}
+
+  metro-runtime@0.87.1:
+    resolution: {integrity: sha512-kjeuSvInsM6OzBjkCQsWxnkrKZFMKtnkCl38oXWRI9lDGs2L9hGs9Tak9sQYJ9h3gtDujneB7wZio+irgqJKDw==}
+    engines: {node: ^22.13.0 || ^24.3.0 || >= 26.0.0}
 
   metro-source-map@0.83.3:
     resolution: {integrity: sha512-xkC3qwUBh2psVZgVavo8+r2C9Igkk3DibiOXSAht1aYRRcztEZNFtAMtfSB7sdO2iFMx2Mlyu++cBxz/fhdzQg==}
@@ -10881,6 +10888,11 @@ snapshots:
       flow-enums-runtime: 0.0.6
 
   metro-runtime@0.83.7:
+    dependencies:
+      '@babel/runtime': 7.28.6
+      flow-enums-runtime: 0.0.6
+
+  metro-runtime@0.87.1:
     dependencies:
       '@babel/runtime': 7.28.6
       flow-enums-runtime: 0.0.6
