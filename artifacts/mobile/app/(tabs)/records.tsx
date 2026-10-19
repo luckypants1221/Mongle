@@ -221,7 +221,7 @@ export default function RecordsScreen() {
                   { icon: "sun" as const, label: "기상 시각", value: selectedRecord.endTime, color: "#FFE082" },
                   { icon: "clock" as const, label: "수면 시간", value: fmtDuration(selectedRecord.durationMinutes), color: "#80CBC4" },
                   { icon: "thermometer" as const, label: "온도 / 습도", value: `${selectedRecord.temperature ?? "--"}°C / ${selectedRecord.humidity ?? "--"}%`, color: colors.mutedForeground },
-                  { icon: "activity" as const, label: "코골이 횟수", value: selectedRecord.snoringCount == null ? "분석 기록 없음" : `${selectedRecord.snoringCount}회`, color: "#BBDDFF" },
+                  { icon: "activity" as const, label: "코골이 의심 횟수", value: selectedRecord.snoringCount == null ? "분석 기록 없음" : `${selectedRecord.snoringCount}회`, color: "#BBDDFF" },
                 ].map(({ icon, label, value, color }) => (
                   <View key={label} style={[styles.detailItem, { backgroundColor: colors.surface }]}>
                     <Feather name={icon as React.ComponentProps<typeof Feather>["name"]} size={16} color={color} />

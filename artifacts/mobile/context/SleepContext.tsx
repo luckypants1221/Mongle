@@ -1,3 +1,4 @@
+import { useSleepRecording } from "../hooks/useSleepRecording";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
@@ -94,6 +95,7 @@ function calcScore(durationMinutes: number, r?: Ratings): number {
 
 export function SleepProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
+  const { startRecording, stopRecording } = useSleepRecording();
   const userId =
     user?.id ?? (user as any)?.user_id;
   const recordsKey = `@sleep_records:${userId}`;
@@ -140,7 +142,7 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
         hum_avg: rec.humidity ?? 0,
         audio_path: "",
         duration: rec.durationMinutes,
-        snoring_count: 0,
+        ...(rec.snoringCount != null ? { snoring_count: rec.snoringCount } : {}),
         memo: rec.memo ?? "",
       });
       console.log("수면기록 저장 응답:", JSON.stringify(res.data));
@@ -342,6 +344,8 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   // ── 수면 시작 / 종료 ──────────────────────────────────────
 
   function startSleep() {
+    if (activeSession) return;
+    void startRecording();
     setActiveSession({
       startTime: new Date(),
       temperature: 22 + Math.floor(Math.random() * 5),
@@ -364,9 +368,12 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     // 홈 화면 달력(toLocalDateStr)과 같은 기준으로 날짜 계산
     const dateStr = toLocalDateStr(activeSession.startTime);
 
+    const snoringCount = await stopRecording();
+
     const record: SleepRecord = {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
       date: dateStr,
+      snoringCount,
       startTime: activeSession.startTime.toTimeString().slice(0, 5),
       endTime: endTime.toTimeString().slice(0, 5),
       startIso: toKstIso(activeSession.startTime),
