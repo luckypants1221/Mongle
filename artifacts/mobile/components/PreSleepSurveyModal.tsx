@@ -1,6 +1,8 @@
+import { useAuth } from "@/context/AuthContext";
+import { saveSurveyApi } from "@/services/authApi";
 import { Feather } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
-import { isSurveyComplete, PRE_SLEEP_QUESTIONS, type PreSleepSurvey, type PreSleepSurveyAnswers } from "@/lib/preSleepSurvey";
+import { isSurveyComplete, isSurveyLevel, SURVEY_LEVELS, PRE_SLEEP_QUESTIONS, type PreSleepSurvey, type PreSleepSurveyAnswers } from "@/lib/preSleepSurvey";
 import React, { useRef, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,21 +11,35 @@ interface Props {
   previousDate: string;
   previousScore: number | null;
   onClose: () => void;
-  onStart: (survey: PreSleepSurvey) => void;
+  onSaved: (survey: PreSleepSurvey) => void;
 }
 
-export function PreSleepSurveyModal({ previousDate, previousScore, onClose, onStart }: Props) {
+export function PreSleepSurveyModal({ previousDate, previousScore, onClose, onSaved }: Props) {
+  const { user } = useAuth();
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [answers, setAnswers] = useState<Partial<PreSleepSurveyAnswers>>({});
   const submitted = useRef(false);
   const complete = isSurveyComplete(answers);
-  const count = PRE_SLEEP_QUESTIONS.filter(({ key }) => typeof answers[key] === "boolean").length;
+  const count = PRE_SLEEP_QUESTIONS.filter(({ key }) => isSurveyLevel(answers[key])).length;
 
-  function submit() {
+  async function submit() {
     if (submitted.current || !isSurveyComplete(answers)) return;
+    if (!user?.id) { setSaveError("로그인 후 다시 시도해주세요."); return; }
     submitted.current = true;
-    onStart({ ...answers, answeredAt: new Date().toISOString(), previousSleepDate: previousDate, previousSleepScore: previousScore });
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await saveSurveyApi(user.id, answers);
+      onSaved({ ...answers, answeredAt: new Date().toISOString(), previousSleepDate: previousDate, previousSleepScore: previousScore });
+    } catch {
+      setSaveError("설문 저장에 실패했어요. 연결을 확인하고 다시 시도해주세요.");
+      submitted.current = false;
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -55,11 +71,12 @@ export function PreSleepSurveyModal({ previousDate, previousScore, onClose, onSt
                 <Text style={[styles.questionTitle, { color: colors.text }]}>{index + 1}. {title}</Text>
                 <Text style={[styles.description, { color: colors.mutedForeground }]}>{description}</Text>
                 <View accessibilityRole="radiogroup" accessibilityLabel={title} style={styles.options}>
-                  {[true, false].map((value) => {
+                  {SURVEY_LEVELS.map((value) => {
                     const selected = answers[key] === value;
-                    const label = value ? "네" : "아니요";
+                    const label = `${value}`;
                     return (
                       <Pressable key={label} accessibilityRole="radio" accessibilityState={{ checked: selected }} accessibilityLabel={`${title} ${label}`}
+                        disabled={saving}
                         onPress={() => setAnswers((current) => ({ ...current, [key]: value }))}
                         style={({ pressed }) => [styles.option, { backgroundColor: selected ? colors.primary : colors.surface, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.8 : 1 }]}>
                         <Text style={[styles.optionLabel, { color: selected ? colors.primaryForeground : colors.text }]}>{selected ? "✓ " : ""}{label}</Text>
@@ -69,13 +86,14 @@ export function PreSleepSurveyModal({ previousDate, previousScore, onClose, onSt
                 </View>
               </View>
             ))}
-            <Text style={[styles.note, { color: colors.mutedForeground }]}>응답은 이번 수면 기록과 함께 기기에 저장돼요. 설문만으로 코골이 발생 여부나 확률을 판단하지 않아요.</Text>
+            <Text style={[styles.note, { color: colors.mutedForeground }]}>각 문항의 선택 단계가 1~5의 숫자로 서버에 저장돼요. 설문만으로 코골이 발생 여부나 확률을 판단하지 않아요.</Text>
           </ScrollView>
 
           <View style={styles.footer}>
-            <Pressable accessibilityRole="button" accessibilityState={{ disabled: !complete }} disabled={!complete} onPress={submit}
+            {saveError && <Text accessibilityRole="alert" style={[styles.note, { color: colors.text }]}>{saveError}</Text>}
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: !complete || saving }} disabled={!complete || saving} onPress={() => void submit()}
               style={({ pressed }) => [styles.submit, { backgroundColor: colors.warning, opacity: !complete ? 0.4 : pressed ? 0.85 : 1 }]}>
-              <Text style={[styles.submitLabel, { color: colors.primaryForeground }]}>{complete ? "설문 완료하고 수면 시작" : "4개 질문에 모두 답해주세요"}</Text>
+              <Text style={[styles.submitLabel, { color: colors.primaryForeground }]}>{saving ? "설문 저장 중..." : complete ? "설문 저장하고 확률 확인" : "4개 질문에 모두 답해주세요"}</Text>
             </Pressable>
           </View>
         </View>
@@ -98,9 +116,9 @@ const styles = StyleSheet.create({
   question: { padding: 18, borderRadius: 20, gap: 12 },
   questionTitle: { fontSize: 17, fontWeight: "700", lineHeight: 25 },
   description: { fontSize: 13, lineHeight: 21 },
-  options: { flexDirection: "row", gap: 12 },
+  options: { flexDirection: "row", gap: 6 },
   option: { flex: 1, borderWidth: 1, borderRadius: 15, minHeight: 50, alignItems: "center", justifyContent: "center" },
-  optionLabel: { fontSize: 16, fontWeight: "700" },
+  optionLabel: { fontSize: 13, fontWeight: "700" },
   note: { fontSize: 12, lineHeight: 20, paddingVertical: 8 },
   footer: { paddingHorizontal: 20, paddingTop: 12 },
   submit: { minHeight: 55, borderRadius: 18, padding: 14, alignItems: "center", justifyContent: "center" },

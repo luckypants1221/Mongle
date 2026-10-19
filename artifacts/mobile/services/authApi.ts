@@ -1,8 +1,10 @@
+import { parseSnoringProbability, probabilityQuery } from "../lib/snoringProbability";
+import { toSurveyPayload, type PreSleepSurveyAnswers } from "../lib/preSleepSurvey";
 import axios from "axios";
 
 
 const api = axios.create({
-  baseURL: "http://13.125.10.228/",
+  baseURL: "http://13.125.10.228",
   timeout: 10000,
 });
 
@@ -94,11 +96,32 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (res) => {
-    // console.log("[RES]", res.status, res.config.url, JSON.stringify(res.data));
+    if (res.config.url === "/analysis/survey") {
+      console.log("[SURVEY SAVED]", res.status, JSON.stringify(res.data));
+    }
     return res;
   },
   (err) => {
     console.log("[ERR]", err.config?.url, err.message, err.response?.status);
+    if (err.config?.url?.startsWith("/analysis/probability")) {
+      console.log("[PROBABILITY ERROR]", JSON.stringify(err.response?.data));
+    }
+    if (err.config?.url === "/analysis/survey") {
+      console.log("[SURVEY SAVE ERROR]", err.response?.status, JSON.stringify(err.response?.data));
+    }
     return Promise.reject(err);
   }
 );
+
+export const saveSurveyApi = (userId: string | number, answers: PreSleepSurveyAnswers) =>
+  api.post("/analysis/survey", toSurveyPayload(userId, answers));
+
+export async function getSnoringProbabilityApi(userId: string | number, sleepScore?: number | null, signal?: AbortSignal) {
+  const params = probabilityQuery(userId, sleepScore);
+  const query = new URLSearchParams({ id: String(params.id) });
+  if (params.sleep_score !== undefined) query.set("sleep_score", String(params.sleep_score));
+  const response = await api.get(`/analysis/probability?${query.toString()}`, { signal });
+  const probability = parseSnoringProbability(response.data);
+  if (probability === null) throw new Error("코골이 확률 데이터가 없거나 응답 형식이 올바르지 않습니다.");
+  return probability;
+}

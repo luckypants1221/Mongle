@@ -1,8 +1,11 @@
+import { isTrainingDataInsufficient } from "@/lib/snoringProbability";
+import type { PreSleepSurvey } from "@/lib/preSleepSurvey";
+import { getSnoringProbabilityApi } from "@/services/authApi";
 import { Feather } from "@/components/Icon";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
-import React, { useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
   Alert,
   Image,
@@ -58,8 +61,12 @@ export default function HomeScreen() {
   const { records, environmentRecommendation, weeklyRecords, getRecordByDate, activeSession, startSleep, latestStages, latestHealth, refreshLatestStages } = useSleep();
   const [stageRefreshing, setStageRefreshing] = useState(false);
   const [surveyOpen, setSurveyOpen] = useState(false);
-  // Connect the backend prediction here when its API is available (0–100%).
-  const snoringProbabilityPercent: number | null = null;
+  const [savedSurvey, setSavedSurvey] = useState<{ userId: string; date: string; survey: PreSleepSurvey } | null>(null);
+  const [snoringProbabilityPercent, setSnoringProbabilityPercent] = useState<number | null>(null);
+  const [probabilityLoading, setProbabilityLoading] = useState(false);
+  const [probabilityError, setProbabilityError] = useState(false);
+  const [trainingDataMissing, setTrainingDataMissing] = useState(false);
+  const [surveyRevision, setSurveyRevision] = useState(0);
 
   const [envOpen, setEnvOpen] = useState<EnvType>(null);
   const [music, setMusic] = useState("none");
@@ -95,6 +102,27 @@ export default function HomeScreen() {
   const today = new Date();
   const todayStr = toLocalDateStr(today);
   const weekDates = getWeekDates();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  const yesterdayScore = getRecordByDate(toLocalDateStr(yesterday))?.score ?? null;
+
+  useFocusEffect(useCallback(() => {
+    const controller = new AbortController();
+    setSnoringProbabilityPercent(null);
+    setProbabilityError(false);
+    setTrainingDataMissing(false);
+    if (!user?.id) { setProbabilityLoading(false); return; }
+    setProbabilityLoading(true);
+    getSnoringProbabilityApi(user.id, yesterdayScore, controller.signal)
+      .then(value => { if (!controller.signal.aborted) setSnoringProbabilityPercent(value); })
+      .catch(error => {
+        if (controller.signal.aborted) return;
+        if (isTrainingDataInsufficient(error)) setTrainingDataMissing(true);
+        else setProbabilityError(true);
+      })
+      .finally(() => { if (!controller.signal.aborted) setProbabilityLoading(false); });
+    return () => controller.abort();
+  }, [user?.id, yesterdayScore, todayStr, surveyRevision]));
+
 
   // 선택한 날짜 (초기값: 오늘)
   const [selectedDate, setSelectedDate] = useState(
@@ -118,8 +146,10 @@ export default function HomeScreen() {
 
   function handleStartSleep() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    if (activeSession) router.push("/sleep");
-    else setSurveyOpen(true);
+    if (!activeSession) {
+      startSleep(savedSurvey && savedSurvey.userId === user?.id && savedSurvey.date === todayStr ? savedSurvey.survey : undefined);
+    }
+    router.push("/sleep");
   }
 
   function envLabel(key: EnvType) {
@@ -178,7 +208,7 @@ export default function HomeScreen() {
               </View>
             </View>
             <View style={styles.headerMetrics}>
-              <SnoringProbabilityBadge probabilityPercent={snoringProbabilityPercent} />
+              <SnoringProbabilityBadge probabilityPercent={snoringProbabilityPercent} loading={probabilityLoading} trainingDataMissing={trainingDataMissing} error={probabilityError} onRetry={() => setSurveyRevision(value => value + 1)} />
               <View style={[styles.scoreBadge, { backgroundColor: colors.surface }]}>
               <Text style={[styles.scoreNum, { color: scoreColor }]}>{lastRecord?.score ?? "--"}</Text>
               <Text style={[styles.scoreLabel, { color: colors.mutedForeground }]}>수면점수</Text>
@@ -227,6 +257,25 @@ export default function HomeScreen() {
 
         {/* ── 바디 — flex로 남은 공간 채움 ── */}
         <View style={[styles.body, { paddingBottom: tabBarHeight + 8 }]}>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="코골이 예측 설문 작성하기"
+            onPress={() => setSurveyOpen(true)}
+            style={({ pressed }) => [styles.card, { backgroundColor: colors.card, opacity: pressed ? 0.8 : 1 }]}
+          >
+            <View style={styles.cardTitleRow}>
+              <Feather name="activity" size={18} color={colors.primary} />
+              <Text style={[styles.cardTitle, { color: colors.text }]}>코골이 예측 설문</Text>
+              <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+            </View>
+            <Text style={{ color: colors.mutedForeground, fontSize: 13, lineHeight: 21 }}>
+              오늘의 습관 4가지를 입력하고 코골이 확률을 확인하세요.
+            </Text>
+            <Text style={{ color: colors.primary, fontSize: 14, fontWeight: "700", marginTop: 10 }}>
+              {savedSurvey && savedSurvey.userId === user?.id && savedSurvey.date === todayStr ? "오늘 설문 다시 작성하기" : "설문 작성하기"}
+            </Text>
+          </Pressable>
 
           {/* 지난 수면 요약 */}
           <View style={[styles.card, { backgroundColor: colors.card }]}>
@@ -435,10 +484,10 @@ export default function HomeScreen() {
           previousDate={toLocalDateStr(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1))}
           previousScore={getRecordByDate(toLocalDateStr(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)))?.score ?? null}
           onClose={() => setSurveyOpen(false)}
-          onStart={(survey) => {
-            startSleep(survey);
+          onSaved={(survey) => {
+            if (user?.id) setSavedSurvey({ userId: user.id, date: todayStr, survey });
+            setSurveyRevision(value => value + 1);
             setSurveyOpen(false);
-            router.push("/sleep");
           }}
         />
       )}

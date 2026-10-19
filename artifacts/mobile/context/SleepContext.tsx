@@ -38,12 +38,12 @@ interface SleepContextType {
   records: SleepRecord[];
   recordingState: RecordingState;
   environmentRecommendation: EnvironmentRecommendation | null;
-  activeSession: { startTime: Date; temperature: number; humidity: number; preSleepSurvey: PreSleepSurvey } | null;
+  activeSession: { startTime: Date; temperature: number; humidity: number; preSleepSurvey?: PreSleepSurvey } | null;
   /** 가장 최근 수면의 워치 수면 단계 (없으면 빈 배열) → RemGraph 의 stages 로 전달 */
   latestStages: ActualSleepStage[];
   latestHealth: HealthData | null;
   refreshLatestStages: () => Promise<boolean>;
-  startSleep: (survey: PreSleepSurvey) => void;
+  startSleep: (survey?: PreSleepSurvey) => void;
   endSleep: () => Promise<SleepRecord | null>;
   updateMemo: (id: string, memo: string) => Promise<void>;
   getRecordByDate: (date: string) => SleepRecord | undefined;
@@ -218,7 +218,8 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
           cached.date === record.date && cached.startTime === record.startTime &&
           cached.endTime === record.endTime && cached.durationMinutes === record.durationMinutes);
         if (matches.length === 1) {
-          return { ...record,
+          return {
+            ...record,
             ...(matches[0].snoringAnalysis ? { snoringCount: matches[0].snoringCount, snoringAnalysis: matches[0].snoringAnalysis } : {}),
             preSleepSurvey: matches[0].preSleepSurvey,
           };
@@ -276,23 +277,24 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
         times = { startIso: payload.start_sleep, endIso: payload.end_sleep };
       } catch { /* 잘못된 서버 시각은 워치 조회에서 제외한다. */ }
       return ({
-      ...times,
-      id: String(r.record_id ?? r.id ?? i),
-      date: r.day,
-      startTime: utcTimeToKst(r.start_sleep),
-      endTime: utcTimeToKst(r.end_sleep),
-      serverSaved: true,
-      durationMinutes: r.duration ?? 0,
-      score: r.sleep_score ?? 0,
-      temperature: r.temp_avg,
-      humidity: r.hum_avg,
-      memo: r.memo,
+        ...times,
+        id: String(r.record_id ?? r.id ?? i),
+        date: r.day,
+        startTime: utcTimeToKst(r.start_sleep),
+        endTime: utcTimeToKst(r.end_sleep),
+        serverSaved: true,
+        durationMinutes: r.duration ?? 0,
+        score: r.sleep_score ?? 0,
+        temperature: r.temp_avg,
+        humidity: r.hum_avg,
+        memo: r.memo,
 
-      // 추가
-      snoringCount: r.snoring_count == null
-        ? null
-        : Number(r.snoring_count),
-    }); });
+        // 추가
+        snoringCount: r.snoring_count == null
+          ? null
+          : Number(r.snoring_count),
+      });
+    });
   };
 
   // ── 알람 ──────────────────────────────────────────────
@@ -386,7 +388,7 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
 
   // ── 수면 시작 / 종료 ──────────────────────────────────────
 
-  function startSleep(survey: PreSleepSurvey) {
+  function startSleep(survey?: PreSleepSurvey) {
     if (activeSession) return;
     void startRecording();
     setActiveSession({
@@ -565,8 +567,8 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     [records]
   );
   useEffect(() => {
-    console.log("[추천] 전체 수면 기록:", records.length);
-    console.log("[추천] 계산 결과:", environmentRecommendation);
+    // console.log("[추천] 전체 수면 기록:", records.length);
+    // console.log("[추천] 계산 결과:", environmentRecommendation);
   }, [records, environmentRecommendation]);
 
   const weeklyRecords = records.slice(-7);
