@@ -72,7 +72,7 @@ export default function RegisterScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <StatusBar style="light" translucent backgroundColor="transparent" />
+      <StatusBar style="light" />
 
       {/* 상단 헤더 — 노치까지 덮는 그라디언트 */}
       <LinearGradient colors={["#252848", "#1E203C"]} style={styles.topBar}>

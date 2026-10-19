@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { Dimensions, StyleSheet, Text, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
 import { SleepRecord } from "@/context/SleepContext";
@@ -8,6 +8,7 @@ interface Props {
   records: SleepRecord[];
   compact?: boolean;
   stages?: ActualSleepStage[];
+  range?: { startMs: number; endMs: number } | null;
 }
 
 type Stage = "awake" | "light" | "rem" | "deep";
@@ -36,25 +37,29 @@ function fmtTime(startHour: number, startMin: number, addMin: number) {
 }
 
 
-export function RemGraph({ records, compact, stages }: Props) {
+export function RemGraph({ records, compact, stages, range }: Props) {
   const colors = useColors();
   const screenW = Dimensions.get("window").width;
-  const chartW = screenW - 96;
+  const [chartW, setChartW] = useState(Math.max(1, screenW - 132));
   const ROW_H = compact ? 20 : 26;
   const ROWS = 4;
   const chartH = ROW_H * ROWS;
 
-  const latest = [...records].filter((r) => r.durationMinutes > 0).sort((a, b) => (b.endIso ?? b.date).localeCompare(a.endIso ?? a.date))[0];
+  const latest = [...records].filter((r) => r.durationMinutes > 0).sort((a, b) => (b.endIso ?? b.date).localeCompare(a.endIso ?? a.date))[0] ?? (range ? {
+    durationMinutes: (range.endMs - range.startMs) / 60000,
+    startTime: new Date(range.startMs).toTimeString().slice(0, 5),
+    startIso: new Date(range.startMs).toISOString(), endIso: new Date(range.endMs).toISOString(),
+  } : undefined);
 
   const { blocks, summary, endLabel, xTicks, hasData } = useMemo(() => {
     if (!latest) return { blocks: [], summary: null, endLabel: "", xTicks: [], hasData: false };
 
-    const dur = latest.durationMinutes;
+    const dur = range ? (range.endMs - range.startMs) / 60000 : latest.durationMinutes;
 
-    const bedH = latest.startTime
+    const bedH = range ? new Date(range.startMs).getHours() : latest.startTime
       ? parseInt(latest.startTime.split(":")[0], 10)
       : 22;
-    const bedM = latest.startTime
+    const bedM = range ? new Date(range.startMs).getMinutes() : latest.startTime
       ? parseInt(latest.startTime.split(":")[1], 10)
       : 0;
 
@@ -68,8 +73,8 @@ export function RemGraph({ records, compact, stages }: Props) {
       return { blocks: [], summary: null, endLabel: end, xTicks: ticks, hasData: false };
     }
 
-    const rangeStart = latest.startIso ? Date.parse(latest.startIso) : Math.min(...stages.map(s => Date.parse(s.startTime)));
-    const rangeEnd = latest.endIso ? Date.parse(latest.endIso) : Math.max(...stages.map(s => Date.parse(s.endTime)));
+    const rangeStart = range?.startMs ?? (latest.startIso ? Date.parse(latest.startIso) : Math.min(...stages.map(s => Date.parse(s.startTime))));
+    const rangeEnd = range?.endMs ?? (latest.endIso ? Date.parse(latest.endIso) : Math.max(...stages.map(s => Date.parse(s.endTime))));
     const totalMs = Math.max(rangeEnd - rangeStart, 1);
 
     // ★ 고정 5분 세그먼트 대신, 실제 구간 길이 비율로 블록 계산
@@ -95,8 +100,8 @@ export function RemGraph({ records, compact, stages }: Props) {
       deep: Math.round(sumMin.deep),
     };
 
-    return { blocks: blockList, summary: sum, endLabel: end, xTicks: ticks, hasData: true };
-  }, [latest, stages]);
+    return { blocks: blockList, summary: sum, endLabel: end, xTicks: ticks, hasData: blockList.length > 0 };
+  }, [latest, stages, range]);
 
   if (!latest) {
     return (
@@ -153,7 +158,7 @@ export function RemGraph({ records, compact, stages }: Props) {
         </View>
 
         {/* 그래프 영역 */}
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1 }} onLayout={(event) => setChartW(Math.max(1, event.nativeEvent.layout.width))}>
           {/* 가로 구분선 */}
           <View style={{ width: chartW, height: chartH, position: "relative" }}>
             {STAGES.map(({ key, color }) => (

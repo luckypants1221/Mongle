@@ -1,4 +1,5 @@
 import { formatSnoreCount } from "@/lib/snoreCandidateAnalyzer";
+import { sleepScoreColor as scoreColor, SLEEP_SCORE_COLORS } from "@/lib/sleepScoreColor";
 import { Feather } from "@/components/Icon";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useState } from "react";
@@ -43,19 +44,7 @@ export default function RecordsScreen() {
 
   const daysInMonth = getDaysInMonth(viewYear, viewMonth);
   const firstDay = getFirstDay(viewYear, viewMonth);
-  const selectedRecord =
-    [...records]
-      .filter((record) => record.date === selectedDate)
-      .sort((a, b) => {
-        const aId = Number(a.id);
-        const bId = Number(b.id);
-
-        if (Number.isFinite(aId) && Number.isFinite(bId)) {
-          return bId - aId;
-        }
-
-        return (b.startIso ?? "").localeCompare(a.startIso ?? "");
-      })[0] ?? null;
+  const selectedRecord = getRecordByDate(selectedDate) ?? null;
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   function handleSelectDate(dateStr: string) {
@@ -76,15 +65,11 @@ export default function RecordsScreen() {
       const status = error?.response?.status;
       const detail = error?.response?.data?.detail;
       Alert.alert("메모 저장 실패", status
-        ? `서버 오류 (${status}): ${typeof detail === "string" ? detail : "PUT API 주소와 요청 형식을 확인해 주세요."}`
+        ? `서버 오류 (${status}): ${typeof detail === "string" ? detail : "메모를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요."}`
         : error instanceof Error ? error.message : "서버 연결을 확인해 주세요.");
     } finally {
       setSavingMemo(false);
     }
-  }
-
-  function scoreColor(s: number) {
-    return s >= 80 ? colors.success : s >= 60 ? "#FFE082" : colors.destructive;
   }
 
   const calDays: (number | null)[] = [
@@ -173,11 +158,8 @@ export default function RecordsScreen() {
                       { color: isSel ? "#1E203C" : isToday ? "#BBDDFF" : colors.text },
                     ]}>{day}</Text>
                   </View>
-                  {rec && !isSel && (
+                  {rec && (
                     <View style={[styles.calDot, { backgroundColor: scoreColor(rec.score) }]} />
-                  )}
-                  {rec?.memo && !isSel && (
-                    <View style={[styles.memoDot, { backgroundColor: "#FFE082" }]} />
                   )}
                 </Pressable>
               );
@@ -185,7 +167,7 @@ export default function RecordsScreen() {
           </View>
 
           <View style={styles.legend}>
-            {[{ color: colors.success, label: "좋음 (80+)" }, { color: "#FFE082", label: "보통 (60+)" }, { color: colors.destructive, label: "부족 (<60)" }].map(({ color, label }) => (
+            {[{ color: SLEEP_SCORE_COLORS.good, label: "좋음 (80+)" }, { color: SLEEP_SCORE_COLORS.average, label: "보통 (60+)" }, { color: SLEEP_SCORE_COLORS.low, label: "부족 (<60)" }].map(({ color, label }) => (
               <View key={label} style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: color }]} />
                 <Text style={[styles.legendLabel, { color: colors.mutedForeground }]}>{label}</Text>

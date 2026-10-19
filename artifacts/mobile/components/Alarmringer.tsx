@@ -9,9 +9,9 @@ import {
 } from "@/lib/alarmScheduler";
 import { setAudioModeAsync, useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
-import * as Notifications from "expo-notifications";
+import * as Notifications from "@/lib/localNotifications";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Modal, Platform, Pressable, StyleSheet, Text, Vibration, View } from "react-native";
+import { Alert, AppState, Modal, Platform, Pressable, StyleSheet, Text, Vibration, View } from "react-native";
 
 /**
  * 앱 루트(SleepProvider 안쪽)에 한 번만 넣는다.
@@ -20,17 +20,29 @@ import { AppState, Modal, Platform, Pressable, StyleSheet, Text, Vibration, View
  *    소리 + 진동을 반복 재생, 최대 60초 후 자동 종료
  */
 export default function AlarmRinger() {
+    const { alarmReady } = useSleep();
+    return alarmReady ? <ActiveAlarmRinger /> : null;
+}
+
+function ActiveAlarmRinger() {
     const { alarmHour, alarmMin, alarmOn } = useSleep();
     const player = useAudioPlayer(require("@/assets/sounds/alarm.wav"));
 
     const [ringing, setRinging] = useState(false);
     const ringingRef = useRef(false);
+    const activeRingStart = useRef<number | null>(null);
+    const stoppedRingStart = useRef<number | null>(null);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     /* ── 알림 예약 갱신 ── */
     useEffect(() => {
         if (Platform.OS === "web") return;
-        if (alarmOn) scheduleWakeAlarm(alarmHour, alarmMin).catch(console.warn);
+        if (alarmOn) scheduleWakeAlarm(alarmHour, alarmMin).then((scheduled) => {
+            if (!scheduled) Alert.alert("알림 권한 필요", "백그라운드 기상 알람을 받으려면 앱 알림을 허용해 주세요.");
+        }).catch((error) => {
+            console.warn("[ALARM] 예약 실패", error);
+            Alert.alert("알람 예약 실패", "기상 알림을 예약하지 못했습니다. 알림 권한과 알람 설정을 확인해 주세요.");
+        });
         else cancelWakeAlarm().catch(console.warn);
     }, [alarmOn, alarmHour, alarmMin]);
 
@@ -38,18 +50,21 @@ export default function AlarmRinger() {
     const stop = useCallback(async () => {
         if (timerRef.current) clearTimeout(timerRef.current);
         timerRef.current = null;
+        stoppedRingStart.current = activeRingStart.current;
         try { player.pause(); } catch { }
         Vibration.cancel();
         ringingRef.current = false;
         setRinging(false);
-        await stopRingingChain();
+        await stopRingingChain().catch((error) => console.warn("[ALARM] 알림 취소 실패", error));
     }, [player]);
 
     /* ── 울리기 시작 (ringStart 기준 60초가 남아 있을 때만) ── */
     const start = useCallback(async (ringStart: number) => {
         const remaining = ringStart + RING_SECONDS * 1000 - Date.now();
-        if (!alarmOn || !ringStart || remaining <= 0 || ringingRef.current) return;
+        if (!alarmOn || !Number.isFinite(ringStart) || remaining <= 0 ||
+            ringStart > Date.now() || ringingRef.current || stoppedRingStart.current === ringStart) return;
 
+        activeRingStart.current = ringStart;
         ringingRef.current = true;
         setRinging(true);
 
@@ -58,12 +73,14 @@ export default function AlarmRinger() {
             player.loop = true;
             await player.seekTo(0);
             player.play();
-        } catch { }
+        } catch (error) {
+            console.warn("[ALARM] 소리 재생 실패", error);
+        }
 
         Vibration.vibrate([0, 700, 500], true); // 계속 반복
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(console.warn);
 
-        timerRef.current = setTimeout(() => { stop(); }, remaining);
+        timerRef.current = setTimeout(() => { void stop(); }, Math.max(0, ringStart + RING_SECONDS * 1000 - Date.now()));
     }, [alarmOn, player, stop]);
 
     /* ── 알림 수신(앱 켜짐) / 알림 탭 / 콜드 스타트 ── */
@@ -72,12 +89,12 @@ export default function AlarmRinger() {
 
         const handle = (n: Notifications.Notification) => {
             const d = n.request.content.data as { type?: string; ringStart?: number } | undefined;
-            if (d?.type === ALARM_TYPE) start(Number(d.ringStart));
+            if (d?.type === ALARM_TYPE && AppState.currentState === "active") void start(Number(d.ringStart));
         };
 
         const s1 = Notifications.addNotificationReceivedListener(handle);
         const s2 = Notifications.addNotificationResponseReceivedListener((r) => handle(r.notification));
-        Notifications.getLastNotificationResponseAsync().then((r) => { if (r) handle(r.notification); });
+        Notifications.getLastNotificationResponseAsync().then((r) => { if (r) handle(r.notification); }).catch(console.warn);
 
         return () => { s1.remove(); s2.remove(); };
     }, [start]);
@@ -87,6 +104,7 @@ export default function AlarmRinger() {
         if (Platform.OS === "web" || !alarmOn) return;
 
         const check = () => {
+            if (AppState.currentState !== "active") return;
             const t = new Date();
             t.setHours(alarmHour, alarmMin, 0, 0);
             const ringStart = t.getTime();
@@ -95,12 +113,21 @@ export default function AlarmRinger() {
         };
 
         check();
+        const interval = setInterval(check, 1000);
         const sub = AppState.addEventListener("change", (s) => { if (s === "active") check(); });
-        return () => sub.remove();
+        return () => { clearInterval(interval); sub.remove(); };
     }, [alarmOn, alarmHour, alarmMin, start]);
 
     /* ── 언마운트 시 정리 ── */
-    useEffect(() => () => { Vibration.cancel(); }, []);
+    useEffect(() => () => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        try { player.pause(); } catch { }
+        Vibration.cancel();
+    }, [player]);
+
+    useEffect(() => {
+        if (!alarmOn && ringingRef.current) void stop();
+    }, [alarmOn, stop]);
 
     const period = alarmHour < 12 ? "오전" : "오후";
     const hour12 = alarmHour === 0 ? 12 : alarmHour > 12 ? alarmHour - 12 : alarmHour;

@@ -22,6 +22,10 @@ import { useTabBarHeight } from "@/hooks/useTabBarHeight";
 import { RemGraph } from "@/components/RemGraph";
 import { EnvModal, EnvType } from "@/components/EnvModal";
 import { useAudioPlayer } from "expo-audio";
+import { sleepScoreColor } from "@/lib/sleepScoreColor";
+import { PreSleepSurveyModal } from "@/components/PreSleepSurveyModal";
+import { WatchHeartRateGraph } from "@/components/WatchHeartRateGraph";
+import { getHealthConnectionMessage } from "@/lib/safeHealth";
 
 const DAYS_KR = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -50,8 +54,9 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useTabBarHeight();
   const { user } = useAuth();
-  const { records, environmentRecommendation, weeklyRecords, getRecordByDate, activeSession, startSleep, latestStages, refreshLatestStages } = useSleep();
+  const { records, environmentRecommendation, weeklyRecords, getRecordByDate, activeSession, startSleep, latestStages, latestHealth, refreshLatestStages } = useSleep();
   const [stageRefreshing, setStageRefreshing] = useState(false);
+  const [surveyOpen, setSurveyOpen] = useState(false);
 
   const [envOpen, setEnvOpen] = useState<EnvType>(null);
   const [music, setMusic] = useState("none");
@@ -106,14 +111,12 @@ export default function HomeScreen() {
 
   const scoreColor =
     !lastRecord ? colors.mutedForeground
-      : lastRecord.score >= 80 ? "#4CAF50"
-        : lastRecord.score >= 60 ? "#FFE082"
-          : "#EF5350";
+      : sleepScoreColor(lastRecord.score);
 
   function handleStartSleep() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (!activeSession) startSleep();
-    router.push("/sleep");
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    if (activeSession) router.push("/sleep");
+    else setSurveyOpen(true);
   }
 
   function envLabel(key: EnvType) {
@@ -207,7 +210,7 @@ export default function HomeScreen() {
                   </View>
                   {rec && (
                     <View style={[styles.scoreDot, {
-                      backgroundColor: rec.score >= 80 ? "#4CAF50" : rec.score >= 60 ? "#FFE082" : "#EF5350",
+                      backgroundColor: sleepScoreColor(rec.score),
                     }]} />
                   )}
                 </Pressable>
@@ -391,34 +394,48 @@ export default function HomeScreen() {
               <Feather name="activity" size={13} color="#7C6AFA" />
               <Text style={[styles.cardTitle, { color: colors.text }]}>렘수면 분석</Text>
             </View>
-            {weeklyRecords.length > 0 ? (
+            {(
               <>
-                <RemGraph records={weeklyRecords} stages={latestStages} compact />
+                {latestHealth && <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 10 }}>
+                  삼성 헬스 · {new Date(latestHealth.startMs).toLocaleString("ko-KR")} ~ {new Date(latestHealth.endMs).toLocaleTimeString("ko-KR")}
+                </Text>}
+                <RemGraph records={weeklyRecords} stages={latestStages} range={latestHealth} compact />
+                <WatchHeartRateGraph data={latestHealth} />
                 <Pressable
                   disabled={stageRefreshing}
                   onPress={async () => {
                     setStageRefreshing(true);
                     try {
                       const ok = await refreshLatestStages();
-                      if (!ok) Alert.alert("수면 단계 없음", "Health Connect 권한과 Samsung Health 동기화를 확인한 뒤 다시 시도해 주세요.");
+                      if (!ok) Alert.alert("워치 데이터 연결", getHealthConnectionMessage());
+                    } catch (error) {
+                      Alert.alert("불러오기 실패", error instanceof Error ? error.message : "잠시 후 다시 시도해 주세요.");
                     } finally {
                       setStageRefreshing(false);
                     }
                   }}
                   style={{ paddingVertical: 8, alignSelf: "center" }}
                 >
-                  <Text style={{ color: "#BBDDFF" }}>{stageRefreshing ? "불러오는 중..." : "워치 수면 단계 새로고침"}</Text>
+                  <Text style={{ color: "#BBDDFF" }}>{stageRefreshing ? "불러오는 중..." : "워치 심박수·수면 단계 불러오기"}</Text>
                 </Pressable>
               </>
-            ) : (
-              <View style={styles.emptyGraph}>
-                <Feather name="bar-chart-2" size={24} color={colors.muted} />
-                <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>수면 기록이 있으면 표시됩니다</Text>
-              </View>
             )}
           </View>
         </View>
       </ScrollView>
+
+      {surveyOpen && (
+        <PreSleepSurveyModal
+          previousDate={toLocalDateStr(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1))}
+          previousScore={getRecordByDate(toLocalDateStr(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)))?.score ?? null}
+          onClose={() => setSurveyOpen(false)}
+          onStart={(survey) => {
+            startSleep(survey);
+            setSurveyOpen(false);
+            router.push("/sleep");
+          }}
+        />
+      )}
 
       {/* ── 수면 시작 버튼 (고정) ── */}
       <View style={[styles.startWrap, { bottom: tabBarHeight, backgroundColor: colors.background }]}>

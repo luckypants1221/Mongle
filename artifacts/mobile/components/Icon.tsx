@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleProp, ViewStyle } from "react-native";
+import { ColorValue, StyleProp, ViewStyle } from "react-native";
 import Svg, {
   Circle,
   Line,
@@ -22,7 +22,7 @@ export type FeatherIconName =
 interface FeatherProps {
   name: FeatherIconName;
   size?: number;
-  color?: string;
+  color?: ColorValue;
   style?: StyleProp<ViewStyle>;
 }
 

@@ -233,6 +233,7 @@ export async function readHeartRateSamples(startMs: number, endMs: number): Prom
   let pageToken: string | undefined;
   do {
     const res = await readRecords('HeartRate', {
+      dataOriginFilter: ['com.sec.android.app.shealth'],
       timeRangeFilter: {
         operator: 'between',
         startTime: new Date(startMs).toISOString(),
@@ -258,8 +259,28 @@ export type ActualSleepStage = {
   stage: "awake" | "light" | "rem" | "deep";
 };
 
+/** 삼성 헬스에 동기화된 최근 수면을 앱 측정 기록 없이도 조회한다. */
+export async function readLatestSamsungSleep(): Promise<{ startMs: number; endMs: number } | null> {
+  const now = Date.now();
+  let pageToken: string | undefined;
+  let latest: { startMs: number; endMs: number } | null = null;
+  do {
+    const response = await readRecords("SleepSession", {
+      dataOriginFilter: ['com.sec.android.app.shealth'], pageToken,
+      timeRangeFilter: { operator: 'between', startTime: new Date(now - 7 * 86400000).toISOString(), endTime: new Date(now).toISOString() },
+    });
+    for (const record of response.records) {
+      const startMs = Date.parse(record.startTime), endMs = Date.parse(record.endTime);
+      if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs && endMs <= now && (!latest || endMs > latest.endMs)) latest = { startMs, endMs };
+    }
+    pageToken = response.pageToken || undefined;
+  } while (pageToken);
+  return latest;
+}
+
 const STAGE_MAP: Record<number, ActualSleepStage["stage"] | null> = {
   1: "awake",
+  3: "awake",
   4: "light",
   5: "deep",
   6: "rem",
@@ -270,17 +291,21 @@ export async function readSleepStages(
   startMs: number,
   endMs: number,
 ): Promise<ActualSleepStage[]> {
-  const { records } = await readRecords("SleepSession", {
+  const result: ActualSleepStage[] = [];
+  const seen = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+  const response = await readRecords("SleepSession", {
+    dataOriginFilter: ['com.sec.android.app.shealth'],
+    pageToken,
     timeRangeFilter: {
       operator: "between",
-      startTime: new Date(startMs).toISOString(),
+      startTime: new Date(startMs - 24 * 3_600_000).toISOString(),
       endTime: new Date(endMs).toISOString(),
     },
   });
 
-  const result: ActualSleepStage[] = [];
-
-  for (const record of records) {
+  for (const record of response.records) {
     for (const stage of record.stages ?? []) {
       const mappedStage = STAGE_MAP[stage.stage];
 
@@ -293,6 +318,9 @@ export async function readSleepStages(
 
       if (e <= s) continue;
 
+      const key = `${s}:${e}:${mappedStage}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       result.push({
         startTime: new Date(s).toISOString(),
         endTime: new Date(e).toISOString(),
@@ -300,6 +328,8 @@ export async function readSleepStages(
       });
     }
   }
+  pageToken = response.pageToken || undefined;
+  } while (pageToken);
 
   return result.sort(
     (a, b) => Date.parse(a.startTime) - Date.parse(b.startTime),

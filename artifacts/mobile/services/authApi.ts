@@ -67,7 +67,7 @@ export const updateProfileApi = (
 ) => api.put(`/profile?user_id=${id}`, { name, email });
 
 // 수면 기록 저장 (엔드포인트와 필드명은 서버 /docs에서 확인해서 맞추세요)
-export const saveSleepApi = (data: {
+export interface SleepInfoPayload {
   id: number;
   sleep_score: number;
   start_sleep: string;   // ISO 문자열
@@ -78,7 +78,12 @@ export const saveSleepApi = (data: {
   duration: number;
   snoring_count: number;
   memo: string;
-}) => api.post("/sleepinfo", data);
+}
+
+export const saveSleepApi = (data: SleepInfoPayload) => api.post("/sleepinfo", data);
+
+export const updateSleepApi = (recordId: number, data: SleepInfoPayload) =>
+  api.put("/sleepinfo", data, { params: { record_id: recordId } });
 
 
 

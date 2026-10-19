@@ -47,7 +47,7 @@ export default function LoginScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <StatusBar style="light" translucent backgroundColor="transparent" />
+      <StatusBar style="light" />
 
       {/* 그라디언트 헤더 — 노치/상태바 뒤까지 확장 */}
       <LinearGradient colors={["#252848", "#1E203C"]} style={styles.hero}>

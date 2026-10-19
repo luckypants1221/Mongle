@@ -17,7 +17,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AuthProvider, useAuth } from "../context/AuthContext";
 import { SleepProvider } from "../context/SleepContext";
-// import AlarmRinger from "../components/Alarmringer";
+import AlarmRinger from "../components/Alarmringer";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -26,7 +26,7 @@ const queryClient = new QueryClient();
 function RootLayoutNav() {
   return (
     <>
-      <StatusBar style="light" translucent backgroundColor="transparent" />
+      <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
@@ -73,7 +73,7 @@ export default function RootLayout() {
                   <RootLayoutNav />
                 </KeyboardProvider>
               </GestureHandlerRootView>
-              {/* <AlarmRinger /> */}
+              <AlarmRinger />
             </SleepProvider>
           </AuthProvider>
         </QueryClientProvider>

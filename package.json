@@ -9,13 +9,11 @@
   },
   "private": true,
   "devDependencies": {
-    "@types/react": "~19.0.14",
+    "@types/react": "~19.2.14",
     "prettier": "^3.8.1",
     "typescript": "~5.9.2"
   },
   "dependencies": {
-    "@react-native-async-storage/async-storage": "2.2.0",
-    "expo-audio": "~1.1.1",
-    "expo-notifications": "~0.32.17"
+    "@react-native-async-storage/async-storage": "2.2.0"
   }
 }

@@ -1,10 +1,8 @@
-import {
-  KeyboardAwareScrollView,
-  KeyboardAwareScrollViewProps,
-} from "react-native-keyboard-controller";
-import { Platform, ScrollView, ScrollViewProps } from "react-native";
+import type { ComponentPropsWithoutRef } from "react";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
+import { Platform, ScrollView } from "react-native";
 
-type Props = KeyboardAwareScrollViewProps & ScrollViewProps;
+type Props = ComponentPropsWithoutRef<typeof KeyboardAwareScrollView>;
 
 export function KeyboardAwareScrollViewCompat({
   children,

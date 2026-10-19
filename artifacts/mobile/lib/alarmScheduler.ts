@@ -1,4 +1,4 @@
-import * as Notifications from "expo-notifications";
+import * as Notifications from "./localNotifications";
 import { Platform } from "react-native";
 
 export const ALARM_TYPE = "wake-alarm";

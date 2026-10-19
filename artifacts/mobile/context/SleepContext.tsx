@@ -1,17 +1,20 @@
 import { snoringCountForApi, type SnoreAnalysisStatus } from "../lib/snoreCandidateAnalyzer";
 import type { RecordingState } from "../hooks/useSleepRecording";
+import type { PreSleepSurvey } from "../lib/preSleepSurvey";
 import { useSleepRecording } from "../hooks/useSleepRecording";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/context/AuthContext";
-import { sleepinfoApi, saveSleepApi } from "@/services/authApi";
+import { sleepinfoApi, saveSleepApi, updateSleepApi } from "@/services/authApi";
+import { sleepRecordMemoPayload, type ServerSleepRecord } from "../lib/sleepRecordMemo";
 // Health Connect 는 safeHealth 를 통해서만 접근 (실패해도 수면 측정에는 영향 없음)
-import { tryPrepareHealth, tryReadHealth } from "../lib/safeHealth";
-// import type { ActualSleepStage } from "../lib/mongleHeartRate";
+import { tryPrepareHealth, tryReadHealth, tryReadLatestWatchHealth, type HealthData } from "../lib/safeHealth";
+import type { ActualSleepStage } from "../lib/mongleHeartRate";
 import { calculateSleepEnvironmentRecommendation, EnvironmentRecommendation } from "../lib/sleepEnvironmentRecommendation";
 
 export interface SleepRecord {
+  preSleepSurvey?: PreSleepSurvey;
   id: string;
   date: string;
   startTime: string;
@@ -35,11 +38,12 @@ interface SleepContextType {
   records: SleepRecord[];
   recordingState: RecordingState;
   environmentRecommendation: EnvironmentRecommendation | null;
-  activeSession: { startTime: Date; temperature: number; humidity: number } | null;
+  activeSession: { startTime: Date; temperature: number; humidity: number; preSleepSurvey: PreSleepSurvey } | null;
   /** 가장 최근 수면의 워치 수면 단계 (없으면 빈 배열) → RemGraph 의 stages 로 전달 */
-  latestStages: [];
+  latestStages: ActualSleepStage[];
+  latestHealth: HealthData | null;
   refreshLatestStages: () => Promise<boolean>;
-  startSleep: () => void;
+  startSleep: (survey: PreSleepSurvey) => void;
   endSleep: () => Promise<SleepRecord | null>;
   updateMemo: (id: string, memo: string) => Promise<void>;
   getRecordByDate: (date: string) => SleepRecord | undefined;
@@ -49,6 +53,7 @@ interface SleepContextType {
   alarmHour: number;
   alarmMin: number;
   alarmOn: boolean;
+  alarmReady: boolean;
   setAlarm: (hour: number, min: number) => Promise<void>;
   setAlarmOn: (on: boolean) => Promise<void>;
   alarmPresets: { h: number; m: number }[];
@@ -106,10 +111,12 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   const stagesKey = `@sleep_stages:${userId}`;
   const [records, setRecords] = useState<SleepRecord[]>([]);
   const [latestStages, setLatestStages] = useState<ActualSleepStage[]>([]);
+  const [latestHealth, setLatestHealth] = useState<HealthData | null>(null);
   const [activeSession, setActiveSession] = useState<SleepContextType["activeSession"]>(null);
   const [alarmHour, setAlarmHour] = useState(7);
   const [alarmMin, setAlarmMin] = useState(0);
   const [alarmOn, setAlarmOnState] = useState(true);
+  const [alarmReady, setAlarmReady] = useState(false);
   const [alarmPresets, setAlarmPresets] = useState<
     { h: number; m: number }[]
   >([
@@ -121,6 +128,7 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setActiveSession(null);
+    setLatestHealth(null);
     if (!userId) {
       setRecords([]);
       setLatestStages([]);
@@ -209,8 +217,11 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
         const matches = cachedMetadata.filter((cached) => cached.serverSaved &&
           cached.date === record.date && cached.startTime === record.startTime &&
           cached.endTime === record.endTime && cached.durationMinutes === record.durationMinutes);
-        if (matches.length === 1 && matches[0].snoringAnalysis) {
-          return { ...record, snoringCount: matches[0].snoringCount, snoringAnalysis: matches[0].snoringAnalysis };
+        if (matches.length === 1) {
+          return { ...record,
+            ...(matches[0].snoringAnalysis ? { snoringCount: matches[0].snoringCount, snoringAnalysis: matches[0].snoringAnalysis } : {}),
+            preSleepSurvey: matches[0].preSleepSurvey,
+          };
         }
         return record;
       });
@@ -230,11 +241,15 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   // 수면 단계는 서버 응답으로 덮어써지지 않도록 별도 키에 저장/복원
   async function loadStages(id: string) {
     try {
-      const raw = await AsyncStorage.getItem(`@sleep_stages:${id}`);
-      setLatestStages(raw ? JSON.parse(raw) : []);
+      const raw = await AsyncStorage.getItem(`@watch_health:${id}`);
+      const data: HealthData | null = raw ? JSON.parse(raw) : null;
+      const valid = data && Number.isFinite(data.startMs) && data.endMs > data.startMs && Array.isArray(data.stages) && Array.isArray(data.hourly) ? data : null;
+      setLatestHealth(valid);
+      setLatestStages(valid?.stages ?? []);
     } catch (e) {
       console.log("수면 단계 불러오기 실패:", e);
       setLatestStages([]);
+      setLatestHealth(null);
     }
   }
 
@@ -254,7 +269,14 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   const mapServerRecords = (data: any): SleepRecord[] => {
     const arr = Array.isArray(data) ? data : data?.records ?? data?.data ?? [];
 
-    return arr.map((r: any, i: number) => ({
+    return arr.map((r: any, i: number) => {
+      let times: { startIso?: string; endIso?: string } = {};
+      try {
+        const payload = sleepRecordMemoPayload(r, r.memo ?? "");
+        times = { startIso: payload.start_sleep, endIso: payload.end_sleep };
+      } catch { /* 잘못된 서버 시각은 워치 조회에서 제외한다. */ }
+      return ({
+      ...times,
       id: String(r.record_id ?? r.id ?? i),
       date: r.day,
       startTime: utcTimeToKst(r.start_sleep),
@@ -270,7 +292,7 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
       snoringCount: r.snoring_count == null
         ? null
         : Number(r.snoring_count),
-    }));
+    }); });
   };
 
   // ── 알람 ──────────────────────────────────────────────
@@ -284,7 +306,11 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
         if (typeof a.min === "number") setAlarmMin(a.min);
         if (typeof a.on === "boolean") setAlarmOnState(a.on);
       }
-    } catch { }
+    } catch (error) {
+      console.warn("알람 설정 불러오기 실패:", error);
+    } finally {
+      setAlarmReady(true);
+    }
   }
 
   async function loadAlarmPresets() {
@@ -360,10 +386,11 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
 
   // ── 수면 시작 / 종료 ──────────────────────────────────────
 
-  function startSleep() {
+  function startSleep(survey: PreSleepSurvey) {
     if (activeSession) return;
     void startRecording();
     setActiveSession({
+      preSleepSurvey: survey,
       startTime: new Date(),
       temperature: 22 + Math.floor(Math.random() * 5),
       humidity: 50 + Math.floor(Math.random() * 20),
@@ -386,8 +413,11 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     const dateStr = toLocalDateStr(activeSession.startTime);
 
     const snoring = await stopRecording();
+    setLatestHealth(null);
+    setLatestStages([]);
 
     const record: SleepRecord = {
+      preSleepSurvey: activeSession.preSleepSurvey,
       id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
       date: dateStr,
       snoringCount: snoring.count,
@@ -457,25 +487,28 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     const latest = [...records]
       .filter((r) => !!r.startIso && !!r.endIso)
       .sort((a, b) => Date.parse(b.endIso!) - Date.parse(a.endIso!))[0];
-    if (!latest?.startIso || !latest?.endIso) return false;
-    const startMs = Date.parse(latest.startIso);
-    const endMs = Date.parse(latest.endIso);
-    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return false;
-    const ready = await tryPrepareHealth();
-    if (!ready) return false;
-    const health = await tryReadHealth(startMs, endMs);
-    if (!health.stages.length) return false;
+    let health: HealthData | null;
+    if (latest?.startIso && latest.endIso && Date.parse(latest.endIso) > Date.parse(latest.startIso)) {
+      if (!(await tryPrepareHealth())) return false;
+      health = await tryReadHealth(Date.parse(latest.startIso), Date.parse(latest.endIso));
+      // 앱 측정 구간에 아직 단계가 없으면 삼성 헬스의 최근 수면을 사용한다.
+      if (!health.available) health = await tryReadLatestWatchHealth();
+    } else health = await tryReadLatestWatchHealth();
+    if (!health?.available) return false;
+    setLatestHealth(health);
     setLatestStages(health.stages);
-    await AsyncStorage.setItem(`@sleep_stages:${userId}`, JSON.stringify(health.stages));
+    await AsyncStorage.setItem(`@watch_health:${userId}`, JSON.stringify(health));
     return true;
   }
 
   async function readAndStoreStages(startMs: number, endMs: number, uid: string) {
     try {
+      if (!(await tryPrepareHealth())) return;
       const health = await tryReadHealth(startMs, endMs);
-      if (health.stages.length > 0) {
+      if (health.available) {
+        setLatestHealth(health);
         setLatestStages(health.stages);
-        await AsyncStorage.setItem(`@sleep_stages:${uid}`, JSON.stringify(health.stages));
+        await AsyncStorage.setItem(`@watch_health:${uid}`, JSON.stringify(health));
       }
     } catch (e) {
       console.log("수면 단계 저장 실패:", e);
@@ -483,13 +516,47 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function updateMemo(id: string, memo: string) {
+    if (!userId) throw new Error("로그인 후 다시 저장해 주세요.");
+    const target = records.find((record) => record.id === id);
+    if (!target) throw new Error("수면 기록을 찾을 수 없습니다.");
+    if (target.serverSaved === false) throw new Error("수면 평가를 완료해 기록을 서버에 저장한 뒤 메모를 수정해 주세요.");
+
+    // PUT replaces the whole record: read authoritative fields before changing
+    // the memo, rather than writing the UI's minute-only times and defaults.
+    const response = await sleepinfoApi(userId);
+    const data = response.data;
+    const serverRecords: ServerSleepRecord[] = Array.isArray(data) ? data : data?.records ?? data?.data ?? [];
+    let serverRecord = serverRecords.find((record) => String(record.record_id) === id);
+    if (!serverRecord) {
+      // Newly POSTed records may still have a local ID. Resolve only a unique
+      // match within this user's records; never use the user's ID as record_id.
+      const matches = serverRecords.filter((record) => record.day === target.date &&
+        utcTimeToKst(record.start_sleep) === target.startTime &&
+        utcTimeToKst(record.end_sleep) === target.endTime &&
+        record.duration === target.durationMinutes);
+      if (matches.length === 1) serverRecord = matches[0];
+    }
+    if (!serverRecord || !Number.isInteger(Number(serverRecord.record_id)) || Number(serverRecord.record_id) <= 0) {
+      throw new Error("서버의 수면 기록을 확인할 수 없습니다. 기록을 새로 불러온 뒤 다시 저장해 주세요.");
+    }
+    await updateSleepApi(Number(serverRecord.record_id), sleepRecordMemoPayload(serverRecord, memo));
+
     const updated = records.map((r) => (r.id === id ? { ...r, memo } : r));
     setRecords(updated);
-    await AsyncStorage.setItem(recordsKey, JSON.stringify(updated));
+    // A local cache failure must not report a successful server update as failed.
+    await AsyncStorage.setItem(recordsKey, JSON.stringify(updated)).catch((error) =>
+      console.warn("메모 캐시 저장 실패:", error));
   }
 
   const getRecordByDate = useCallback(
-    (date: string) => records.find((r) => r.date === date),
+    (date: string) => records
+      .filter((record) => record.date === date)
+      .sort((a, b) => {
+        const aId = Number(a.id);
+        const bId = Number(b.id);
+        if (Number.isFinite(aId) && Number.isFinite(bId)) return bId - aId;
+        return (b.startIso ?? "").localeCompare(a.startIso ?? "");
+      })[0],
     [records]
   );
 
@@ -510,9 +577,9 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SleepContext.Provider value={{
-      records, recordingState, environmentRecommendation, activeSession, latestStages, refreshLatestStages, startSleep, endSleep, updateMemo,
+      records, recordingState, environmentRecommendation, activeSession, latestStages, latestHealth, refreshLatestStages, startSleep, endSleep, updateMemo,
       getRecordByDate, weeklyRecords, averageDuration, averageScore,
-      alarmHour, alarmMin, alarmOn, setAlarm, setAlarmOn, updateRating,
+      alarmHour, alarmMin, alarmOn, alarmReady, setAlarm, setAlarmOn, updateRating,
       alarmPresets,
       addAlarmPreset,
       editAlarmPreset,
