@@ -7,12 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "mobile",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/logo_nobg.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#1E203C"
-    },
     "ios": {
       "supportsTablet": false,
       "backgroundColor": "#1E203C"
@@ -28,7 +22,7 @@
       "package": "com.sse0mi.mobile"
     },
     "web": {
-      "favicon": "./assets/images/icon.png"
+      "favicon": "./assets/images/icon_square.png"
     },
     "plugins": [
       "expo-router",
@@ -55,6 +49,16 @@
         "expo-camera",
         {
           "cameraPermission": "수면 환경 조명(플래시)을 켜기 위해 카메라 접근이 필요합니다."
+        }
+      ],
+      "expo-asset",
+      "expo-splash-screen",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/logo_nobg.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#1E203C"
         }
       ]
     ],
