@@ -76,7 +76,7 @@ export const saveSleepApi = (data: {
   hum_avg: number;
   audio_path: string;
   duration: number;
-  snoring_count?: number;
+  snoring_count: number;
   memo: string;
 }) => api.post("/sleepinfo", data);
 

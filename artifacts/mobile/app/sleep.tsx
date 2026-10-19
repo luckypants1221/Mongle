@@ -5,6 +5,7 @@ import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -26,7 +27,7 @@ function formatElapsed(s: number) {
 export default function SleepScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { activeSession, endSleep, alarmHour, alarmMin } = useSleep();
+  const { activeSession, endSleep, alarmHour, alarmMin, recordingState } = useSleep();
 
   const [elapsed, setElapsed] = useState(0);
   const [ending, setEnding] = useState(false);
@@ -54,12 +55,15 @@ export default function SleepScreen() {
   async function handleEndSleep() {
     if (ending) return;
     setEnding(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const record = await endSleep();
-    router.replace({
-      pathname: "/sleep_rating",
-      params: { recordId: record?.id ?? "" },
-    });
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    try {
+      const record = await endSleep();
+      if (!record) throw new Error("수면 기록을 찾을 수 없습니다.");
+      router.replace({ pathname: "/sleep_rating", params: { recordId: record.id } });
+    } catch (error) {
+      Alert.alert("수면 종료 실패", error instanceof Error ? error.message : "다시 시도해주세요.");
+      setEnding(false);
+    }
   }
 
   if (!activeSession) {
@@ -104,6 +108,19 @@ export default function SleepScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]}
         showsVerticalScrollIndicator={false}
       >
+        <View style={{ backgroundColor: colors.card, padding: 18, borderRadius: 18, gap: 8 }}>
+          <Text style={{ color: colors.text, fontSize: 16, fontWeight: "700" }}>코골이 의심 횟수</Text>
+          <Text style={{ color: "#BBDDFF", fontSize: 30, fontWeight: "700" }}>
+            {recordingState.count == null ? "--회" : `${recordingState.count}회`}
+          </Text>
+          <Text style={{ color: colors.mutedForeground }}>{recordingState.message}</Text>
+          {recordingState.db !== null && (
+            <Text style={{ color: colors.mutedForeground }}>현재 음량: {Math.round(recordingState.db)} dB</Text>
+          )}
+          <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
+            음량 기반 추정으로 기침·말소리·음악이 포함될 수 있어요. 화면을 켠 상태에서 먼저 확인해주세요.
+          </Text>
+        </View>
         {/* 달 + 시계 */}
         <View style={styles.clockSection}>
           <View style={[styles.moonRingOuter, { borderColor: "#BBDDFF20" }]}>

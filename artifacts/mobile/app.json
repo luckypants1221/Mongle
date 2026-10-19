@@ -19,11 +19,6 @@
     },
     "android": {
       "backgroundColor": "#1E203C",
-      "statusBar": {
-        "backgroundColor": "#00000000",
-        "translucent": true,
-        "barStyle": "light-content"
-      },
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
@@ -48,7 +43,14 @@
         }
       ],
       "react-native-health-connect",
-      "expo-build-properties",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ],
       [
         "expo-camera",
         {

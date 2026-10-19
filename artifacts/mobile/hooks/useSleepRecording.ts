@@ -1,101 +1,169 @@
-import { useEffect, useRef } from "react";
-import { Alert, Platform } from "react-native";
-import {
-  RecordingPresets, requestRecordingPermissionsAsync,
-  setAudioModeAsync, useAudioRecorder,
-} from "expo-audio";
-import { analyzeSoundEvents, type LevelSample } from "../lib/snoreCandidateAnalyzer";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState, Platform } from "react-native";
+import type { AudioRecorder } from "expo-audio";
+import Constants from "expo-constants";
+import { SoundEventCounter, type SnoreResult } from "../lib/snoreCandidateAnalyzer";
 
-/** 음량 기반 소리 이벤트 추정이며 코골이 분류 모델은 아닙니다. */
+export type RecordingState = {
+  phase: "idle" | "preparing" | "calibrating" | "recording" | "stopped" | "unavailable";
+  count: number | null;
+  db: number | null;
+  partial: boolean;
+  message: string;
+};
+const INITIAL: RecordingState = { phase: "idle", count: null, db: null, partial: false, message: "녹음 대기" };
+const EMPTY: SnoreResult = { count: null, status: "unavailable" };
+
+/** 수면 시작 시에만 네이티브 녹음 객체 생성. 샘플 배열을 밤새 누적하지 않는다. */
 export function useSleepRecording() {
-  const recorder = useAudioRecorder({
-    ...RecordingPresets.LOW_QUALITY,
-    isMeteringEnabled: true,
-  });
-  const samples = useRef<LevelSample[]>([]);
+  const [recordingState, setState] = useState<RecordingState>(INITIAL);
+  const recorder = useRef<AudioRecorder | null>(null);
+  const counter = useRef(new SoundEventCounter());
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const pending = useRef<Promise<void> | null>(null);
-  const enabled = useRef(false);
-  const previousTime = useRef(-1);
-  const interrupted = useRef(false);
+  const mounted = useRef(true);
+  const generation = useRef(0);
+  const lastTime = useRef(-1);
+  const lastMeterAt = useRef(0);
+  const failed = useRef(false);
+  const lastResult = useRef<SnoreResult>(EMPTY);
 
-  function clearTimer() {
+  const clearTimer = useCallback(() => {
     if (timer.current !== null) clearInterval(timer.current);
     timer.current = null;
-  }
+  }, []);
+  const publish = useCallback((state: RecordingState) => { if (mounted.current) setState(state); }, []);
 
-  function sample() {
-    const status = recorder.getStatus();
-    const t = status.durationMillis / 1000;
-    if (status.isRecording && Number.isFinite(status.metering) && t > previousTime.current) {
-      if (previousTime.current >= 0 && t - previousTime.current > 2) interrupted.current = true;
-      samples.current.push({ t, db: status.metering! });
-      previousTime.current = t;
-    }
-  }
-
-  function startRecording(): Promise<void> {
-    if (pending.current) return pending.current;
-    const task = (async () => {
+  const sample = useCallback(() => {
+    const native = recorder.current;
+    if (!native) return;
+    try {
+      const status = native.getStatus();
+      if (!status.isRecording) {
+        counter.current.markGap();
+        clearTimer();
+        publish({ phase: "unavailable", count: counter.current.count, db: null, partial: true, message: "녹음이 중단됐습니다. 감지한 구간만 저장합니다." });
+        return;
+      }
+      const t = status.durationMillis / 1000;
+      if (Number.isFinite(status.metering) && t > lastTime.current) {
+        counter.current.add({ t, db: status.metering! });
+        lastTime.current = t;
+        lastMeterAt.current = Date.now();
+      }
+      const noMeter = Date.now() - lastMeterAt.current > 5000;
+      if (noMeter) counter.current.markGap();
+      publish({
+        phase: counter.current.ready ? "recording" : "calibrating",
+        count: counter.current.count,
+        db: Number.isFinite(status.metering) ? status.metering! : null,
+        partial: counter.current.partial,
+        message: noMeter ? "음량 수집을 확인할 수 없습니다." : !counter.current.ready ? "처음 3초는 조용히 주변 소음을 측정합니다." : counter.current.partial ? "수집이 끊긴 구간이 있어 일부 구간만 분석합니다." : "소리를 감지하고 있습니다.",
+      });
+    } catch {
+      failed.current = true;
+      counter.current.markGap();
       clearTimer();
-      samples.current = [];
-      previousTime.current = -1;
-      interrupted.current = false;
-      enabled.current = false;
-      if (Platform.OS === "web") return;
+      publish({ phase: "unavailable", count: counter.current.count, db: null, partial: true, message: "음량 수집이 중단됐습니다." });
+    }
+  }, [clearTimer, publish]);
+
+  const dispose = useCallback(async () => {
+    clearTimer();
+    const native = recorder.current;
+    recorder.current = null;
+    if (native) {
+      try { await native.stop(); } catch { /* 이미 중단된 경우 */ }
+      try { native.release(); } catch { /* 해제된 경우 */ }
       try {
-        const permission = await requestRecordingPermissionsAsync();
-        if (!permission.granted) {
-          Alert.alert("마이크 권한", "수면 측정은 진행하지만 소리 분석은 기록하지 않습니다.");
-          return;
-        }
-        await setAudioModeAsync({
+        const audio = require("expo-audio") as typeof import("expo-audio");
+        await audio.setAudioModeAsync({ allowsRecording: false, allowsBackgroundRecording: false });
+      } catch { /* 오디오 모듈 오류가 수면 종료를 막지 않도록 처리 */ }
+    }
+  }, [clearTimer]);
+
+  const startRecording = useCallback((): Promise<void> => {
+    if (pending.current) return pending.current;
+    if (recorder.current) return Promise.resolve();
+    const token = ++generation.current;
+    counter.current = new SoundEventCounter();
+    failed.current = false;
+    lastTime.current = -1;
+    lastResult.current = EMPTY;
+    publish({ ...INITIAL, phase: "preparing", message: "마이크 준비 중" });
+    const task = (async () => {
+      try {
+        if (Platform.OS === "web") throw new Error("음량 분석은 Android/iOS 앱에서 사용해주세요.");
+        // 모듈 로드와 객체 생성도 try 안에서 실행한다.
+        const audio = require("expo-audio") as typeof import("expo-audio");
+        const permission = await audio.requestRecordingPermissionsAsync();
+        if (!mounted.current || token !== generation.current) return;
+        if (!permission.granted) throw new Error("마이크 권한이 없어 소리 분석을 진행하지 않습니다.");
+        await audio.setAudioModeAsync({
           allowsRecording: true, playsInSilentMode: true,
-          shouldPlayInBackground: true, allowsBackgroundRecording: true,
+          shouldPlayInBackground: true,
+          allowsBackgroundRecording: Constants.appOwnership !== "expo",
         });
-        await recorder.prepareToRecordAsync();
-        recorder.record();
-        enabled.current = true;
-        timer.current = setInterval(() => {
-          try { sample(); } catch { enabled.current = false; clearTimer(); }
-        }, 200);
+        if (!mounted.current || token !== generation.current) return;
+        const preset = audio.RecordingPresets.HIGH_QUALITY;
+        // useAudioRecorder 내부와 동일하게 플랫폼별 옵션을 최상위로 펼친다.
+        const options = { ...preset, ...(Platform.OS === "android" ? preset.android : preset.ios), numberOfChannels: 1, isMeteringEnabled: true };
+        const native = new audio.AudioModule.AudioRecorder(options);
+        recorder.current = native;
+        await native.prepareToRecordAsync();
+        if (!mounted.current || token !== generation.current) { await dispose(); return; }
+        native.record();
+        lastMeterAt.current = Date.now();
+        publish({ ...INITIAL, phase: "calibrating", message: "처음 3초는 조용히 주변 소음을 측정합니다." });
+        timer.current = setInterval(sample, 200);
       } catch (error) {
-        console.warn("녹음 시작 실패:", error);
-        Alert.alert("녹음 불가", "수면 측정은 진행하지만 이번 소리 분석은 기록하지 않습니다.");
+        await dispose();
+        failed.current = true;
+        if (token === generation.current) publish({ ...INITIAL, phase: "unavailable", message: error instanceof Error ? error.message : "녹음을 시작할 수 없습니다." });
       }
     })();
     pending.current = task;
-    void task.finally(() => { if (pending.current === task) pending.current = null; });
+    void task.then(() => { if (pending.current === task) pending.current = null; });
     return task;
-  }
+  }, [dispose, publish, sample]);
 
-  async function stopRecording(): Promise<number | null> {
+  const stopRecording = useCallback(async (): Promise<SnoreResult> => {
     await pending.current;
+    if (!recorder.current) return lastResult.current;
     clearTimer();
-    let complete = enabled.current;
-    try {
-      const status = recorder.getStatus();
-      // OS가 중간에 녹음을 중단했다면 전체 수면의 분석값으로 저장하지 않는다.
-      if (!status.isRecording) complete = false;
-      sample();
-      if (status.isRecording) await recorder.stop();
-    } catch (error) {
-      complete = false;
-      console.warn("녹음 종료 실패:", error);
-    } finally {
-      enabled.current = false;
-      await setAudioModeAsync({ allowsRecording: false, allowsBackgroundRecording: false })
-        .catch(() => {});
-    }
-    const count = complete && !interrupted.current ? analyzeSoundEvents(samples.current).count : null;
-    samples.current = [];
-    return count;
-  }
+    sample();
+    const analysis = counter.current.finish();
+    const result: SnoreResult = {
+      count: analysis.count,
+      status: analysis.count === null ? "unavailable" : counter.current.partial || failed.current ? "partial" : "complete",
+    };
+    await dispose();
+    lastResult.current = result;
+    publish({ phase: "stopped", count: result.count, db: null, partial: result.status === "partial", message: result.count === null ? "분석할 음량 데이터가 부족합니다." : "분석 완료" });
+    return result;
+  }, [clearTimer, dispose, publish, sample]);
 
-  useEffect(() => () => {
-    clearTimer();
-    // recorder는 useAudioRecorder가 해제한다.
-  }, []);
+  const cancelRecording = useCallback(async () => {
+    generation.current++;
+    await pending.current;
+    await dispose();
+    lastResult.current = EMPTY;
+    publish(INITIAL);
+  }, [dispose, publish]);
 
-  return { startRecording, stopRecording };
+  useEffect(() => {
+    mounted.current = true;
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (recorder.current && state !== "active") counter.current.markGap();
+    });
+    return () => {
+      mounted.current = false;
+      generation.current++;
+      subscription.remove();
+      clearTimer();
+      void dispose();
+    };
+  }, [clearTimer, dispose]);
+
+  return { startRecording, stopRecording, cancelRecording, recordingState };
 }

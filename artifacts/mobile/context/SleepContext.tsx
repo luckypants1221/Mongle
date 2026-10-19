@@ -1,3 +1,5 @@
+import { snoringCountForApi, type SnoreAnalysisStatus } from "../lib/snoreCandidateAnalyzer";
+import type { RecordingState } from "../hooks/useSleepRecording";
 import { useSleepRecording } from "../hooks/useSleepRecording";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
@@ -6,7 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { sleepinfoApi, saveSleepApi } from "@/services/authApi";
 // Health Connect 는 safeHealth 를 통해서만 접근 (실패해도 수면 측정에는 영향 없음)
 import { tryPrepareHealth, tryReadHealth } from "../lib/safeHealth";
-import type { ActualSleepStage } from "../lib/mongleHeartRate";
+// import type { ActualSleepStage } from "../lib/mongleHeartRate";
 import { calculateSleepEnvironmentRecommendation, EnvironmentRecommendation } from "../lib/sleepEnvironmentRecommendation";
 
 export interface SleepRecord {
@@ -26,14 +28,16 @@ export interface SleepRecord {
   tempRating?: number;
   humRating?: number;
   snoringCount?: number | null;
+  snoringAnalysis?: SnoreAnalysisStatus;
 }
 
 interface SleepContextType {
   records: SleepRecord[];
+  recordingState: RecordingState;
   environmentRecommendation: EnvironmentRecommendation | null;
   activeSession: { startTime: Date; temperature: number; humidity: number } | null;
   /** 가장 최근 수면의 워치 수면 단계 (없으면 빈 배열) → RemGraph 의 stages 로 전달 */
-  latestStages: ActualSleepStage[];
+  latestStages: [];
   refreshLatestStages: () => Promise<boolean>;
   startSleep: () => void;
   endSleep: () => Promise<SleepRecord | null>;
@@ -95,7 +99,7 @@ function calcScore(durationMinutes: number, r?: Ratings): number {
 
 export function SleepProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const { startRecording, stopRecording } = useSleepRecording();
+  const { startRecording, stopRecording, cancelRecording, recordingState } = useSleepRecording();
   const userId =
     user?.id ?? (user as any)?.user_id;
   const recordsKey = `@sleep_records:${userId}`;
@@ -126,7 +130,8 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     loadStages(userId);
     loadAlarm();
     loadAlarmPresets();
-  }, [userId]);
+    return () => { void cancelRecording(); };
+  }, [userId, cancelRecording]);
 
   // ── 서버 저장 ──────────────────────────────────────────────
 
@@ -142,7 +147,7 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
         hum_avg: rec.humidity ?? 0,
         audio_path: "",
         duration: rec.durationMinutes,
-        ...(rec.snoringCount != null ? { snoring_count: rec.snoringCount } : {}),
+        snoring_count: snoringCountForApi(rec.snoringCount),
         memo: rec.memo ?? "",
       });
       console.log("수면기록 저장 응답:", JSON.stringify(res.data));
@@ -178,10 +183,12 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
   async function loadRecords(id: string) {
     // 1) 로컬 캐시 중 서버에 못 올린 기록을 먼저 저장 시도
     let pending: SleepRecord[] = [];
+    let cachedMetadata: SleepRecord[] = [];
     try {
       const cachedRaw = await AsyncStorage.getItem(`@sleep_records:${id}`);
       const cached: SleepRecord[] = cachedRaw ? JSON.parse(cachedRaw) : [];
       const flushed = await flushPending(cached);
+      cachedMetadata = flushed;
       pending = flushed.filter((r) => r.serverSaved === false); // 아직도 실패한 것
       if (flushed.some((r, i) => r !== cached[i])) {
         await AsyncStorage.setItem(`@sleep_records:${id}`, JSON.stringify(flushed));
@@ -197,7 +204,17 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
       const last = res.data?.[res.data.length - 1];
       console.log("[서버]", JSON.stringify(last));
       console.log("[변환]", utcTimeToKst(last?.start_sleep), utcTimeToKst(last?.end_sleep));
-      const list = [...mapServerRecords(res.data), ...pending];
+      const serverRecords = mapServerRecords(res.data).map((record) => {
+        // 서버에는 분석 상태 필드가 없어 같은 기기의 캐시에서 복원한다.
+        const matches = cachedMetadata.filter((cached) => cached.serverSaved &&
+          cached.date === record.date && cached.startTime === record.startTime &&
+          cached.endTime === record.endTime && cached.durationMinutes === record.durationMinutes);
+        if (matches.length === 1 && matches[0].snoringAnalysis) {
+          return { ...record, snoringCount: matches[0].snoringCount, snoringAnalysis: matches[0].snoringAnalysis };
+        }
+        return record;
+      });
+      const list = [...serverRecords, ...pending];
       setRecords(list);
       await AsyncStorage.setItem(`@sleep_records:${id}`, JSON.stringify(list));
 
@@ -368,12 +385,13 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     // 홈 화면 달력(toLocalDateStr)과 같은 기준으로 날짜 계산
     const dateStr = toLocalDateStr(activeSession.startTime);
 
-    const snoringCount = await stopRecording();
+    const snoring = await stopRecording();
 
     const record: SleepRecord = {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
       date: dateStr,
-      snoringCount,
+      snoringCount: snoring.count,
+      snoringAnalysis: snoring.status,
       startTime: activeSession.startTime.toTimeString().slice(0, 5),
       endTime: endTime.toTimeString().slice(0, 5),
       startIso: toKstIso(activeSession.startTime),
@@ -397,7 +415,7 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem(recordsKey, JSON.stringify(updated));
 
     // 서버 저장은 평점 입력 시(updateRating) 최종 점수로 1회 수행.
-    // 평점을 건너뛰면 다음 앱 실행 때 loadRecords → flushPending 에서 저장됨.
+    // 평점이 입력된 미전송 기록은 다음 실행 시 재전송한다.
 
     // 워치 수면 단계는 따로 읽음 (기다리지 않음)
     readAndStoreStages(startMs, endMs, userId);
@@ -431,6 +449,7 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
     );
     setRecords(updated);
     await AsyncStorage.setItem(recordsKey, JSON.stringify(updated));
+    if (!serverSaved) throw new Error("수면 기록을 기기에 보관했습니다. 서버 저장에 실패했으니 다시 완료를 눌러주세요.");
   }
 
   async function refreshLatestStages(): Promise<boolean> {
@@ -491,7 +510,7 @@ export function SleepProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SleepContext.Provider value={{
-      records, environmentRecommendation, activeSession, latestStages, refreshLatestStages, startSleep, endSleep, updateMemo,
+      records, recordingState, environmentRecommendation, activeSession, latestStages, refreshLatestStages, startSleep, endSleep, updateMemo,
       getRecordByDate, weeklyRecords, averageDuration, averageScore,
       alarmHour, alarmMin, alarmOn, setAlarm, setAlarmOn, updateRating,
       alarmPresets,
