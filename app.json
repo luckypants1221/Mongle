@@ -1,0 +1,73 @@
+{
+  "expo": {
+    "name": "몽글",
+    "slug": "mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "mobile",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": false,
+      "backgroundColor": "#1E203C"
+    },
+    "android": {
+      "backgroundColor": "#1E203C",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.health.READ_HEART_RATE",
+        "android.permission.health.READ_SLEEP"
+      ],
+      "package": "com.sse0mi.mobile"
+    },
+    "web": {
+      "favicon": "./assets/images/icon_square.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-web-browser",
+      "expo-notifications",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "수면 중 소리를 녹음하고 분석하기 위해 마이크를 사용합니다.",
+          "enableBackgroundRecording": true
+        }
+      ],
+      "react-native-health-connect",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26,
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "수면 환경 조명(플래시)을 켜기 위해 카메라 접근이 필요합니다."
+        }
+      ],
+      "expo-asset",
+      "expo-splash-screen",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/logo_nobg.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#1E203C"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
